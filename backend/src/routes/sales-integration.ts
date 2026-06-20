@@ -52,7 +52,7 @@ const handoffBody = z.object({
 function requireIntegrationKey(value: string | undefined) {
   if (!value) throw new AppError(401, 'Integration key required');
   const provided = Buffer.from(value);
-  const expected = Buffer.from(env.SALES_CRM_INTEGRATION_SECRET);
+  const expected = Buffer.from(env.CST_INTEGRATION_SECRET || env.SALES_CRM_INTEGRATION_SECRET);
   if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) {
     throw new AppError(401, 'Invalid integration key');
   }

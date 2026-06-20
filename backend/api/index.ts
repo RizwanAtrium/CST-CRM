@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { app } from '../src/app.js';
 import { connectDatabase } from '../src/config/db.js';
+import { bootstrapDirectorAdmin } from '../src/services/bootstrap.js';
 
 let connection: Promise<void> | undefined;
 
@@ -12,6 +13,7 @@ async function ensureDatabase() {
     });
   }
   await connection;
+  await bootstrapDirectorAdmin();
 }
 
 export default async function handler(request: IncomingMessage, response: ServerResponse) {

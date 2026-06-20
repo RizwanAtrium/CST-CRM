@@ -18,7 +18,12 @@ CORS_ORIGIN=https://cst-crm.vercel.app
 APP_TIMEZONE=Asia/Karachi
 CRON_ENABLED=true
 CRON_SECRET=<at-least-32-character-random-secret>
-SALES_CRM_INTEGRATION_SECRET=<same-secret-as-sales-cst-crm-integration-secret>
+SALES_CRM_INTEGRATION_SECRET=development-sales-integration-key
+CST_INTEGRATION_SECRET=development-sales-integration-key
+AUTO_SEED_DIRECTOR=true
+DIRECTOR_NAME=Director Admin
+DIRECTOR_EMAIL=director@cstcrm.com
+DIRECTOR_PASSWORD=Director@12345
 ```
 
 Important:
