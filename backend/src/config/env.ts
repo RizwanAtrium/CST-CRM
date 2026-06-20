@@ -11,6 +11,7 @@ const schema = z.object({
   APP_TIMEZONE: z.string().default('Asia/Karachi'),
   CRON_ENABLED: z.string().default('true').transform((v) => v === 'true'),
   CRON_SECRET: z.string().min(16).default('development-cron-secret'),
+  SALES_CRM_INTEGRATION_SECRET: z.string().min(24).default('development-sales-integration-key'),
   DIRECTOR_EMAIL: z.string().email().default('asad@example.com'),
   DIRECTOR_PASSWORD: z.string().min(8).default('ChangeMe123!')
 });

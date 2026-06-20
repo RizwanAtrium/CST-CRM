@@ -16,6 +16,7 @@ import { complaintsRouter, contactsRouter, reportsRouter, upsellsRouter } from '
 import { dashboardRouter } from './routes/dashboard.js';
 import { systemRouter } from './routes/system.js';
 import { activitiesRouter } from './routes/activities.js';
+import { salesIntegrationRouter } from './routes/sales-integration.js';
 
 export const app = express();
 app.use(helmet());
@@ -24,6 +25,7 @@ app.use(express.json({ limit: '1mb' }));
 app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.get('/api/health', (_req, res) => res.json({ success: true, data: { status: 'ok', database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected', timestamp: new Date().toISOString() } }));
 app.use('/api/auth', authRouter);
+app.use('/api/integrations/sales', salesIntegrationRouter);
 app.use('/api/users', requireAuth, usersRouter);
 app.use('/api/clients', requireAuth, clientsRouter);
 app.use('/api/clients/:clientId/services', requireAuth, clientServicesRouter);
