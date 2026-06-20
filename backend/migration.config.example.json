@@ -1,0 +1,37 @@
+{
+  "clientSheet": "Client Database",
+  "onboardingSheet": "Onboarding",
+  "headerRow": 1,
+  "clientColumns": {
+    "businessName": "Business Name",
+    "customerName": "Customer Name",
+    "contactNumber": "Contact Number",
+    "email": "Email",
+    "address": "Address",
+    "state": "State",
+    "country": "Country",
+    "closerEmail": "Closer Email",
+    "cstHandlerEmail": "CST Handler Email",
+    "saleDate": "Sale Date",
+    "workStartDate": "Work Start Date",
+    "lifecycleStage": "Status",
+    "dateChurned": "Date Churned"
+  },
+  "services": [
+    { "name": "Website", "column": "Website" },
+    { "name": "GMB", "column": "GMB" }
+  ],
+  "onboardingColumns": {
+    "businessName": "Business Name",
+    "calledSameDay": "Called Same Day",
+    "welcomeMsgSameDay": "Welcome Msg Same Day",
+    "accessReceived": "Access Received",
+    "delaySide": "Delay Side",
+    "delayReason": "Delay Reason",
+    "onboardStatus": "Onboard Status"
+  },
+  "historicalMonths": [
+    { "column": "REPLACE_WITH_BH_HEADER", "billingMonth": "REPLACE_WITH_YYYY-MM" }
+  ],
+  "autoColumnPatterns": ["\\[AUTO\\]", "^AUTO"]
+}

@@ -1,0 +1,36 @@
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: cst-crm-mongodb
+    restart: unless-stopped
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: "${MONGO_ROOT_USERNAME:-cst_admin}"
+      MONGO_INITDB_ROOT_PASSWORD: "${MONGO_ROOT_PASSWORD:-change_me}"
+      MONGO_INITDB_DATABASE: "${MONGO_DATABASE:-cst_crm}"
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mongosh",
+          "--quiet",
+          "--username",
+          "${MONGO_ROOT_USERNAME:-cst_admin}",
+          "--password",
+          "${MONGO_ROOT_PASSWORD:-change_me}",
+          "--authenticationDatabase",
+          "admin",
+          "--eval",
+          "db.adminCommand('ping').ok"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  mongodb_data:
+    name: cst-crm-mongodb-data
