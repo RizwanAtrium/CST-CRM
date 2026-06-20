@@ -1,0 +1,15 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "buildCommand": "npm run build --workspace frontend",
+  "outputDirectory": "frontend/.next",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://your-backend-url/api/:path*"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  }
+}
