@@ -7,6 +7,8 @@ export interface Client {
   customerName: string;
   email: string;
   phone: string;
+  mobile?: string;
+  businessAddress?: string;
   handler: string;
   stage: Stage;
   mrr: number;

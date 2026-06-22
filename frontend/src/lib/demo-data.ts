@@ -11,8 +11,8 @@ import type {
 } from "./types";
 
 export const clients: Client[] = [
-  { id: "CL-1001", businessName: "Northstar Dental", customerName: "Maya Thompson", email: "maya@northstardental.com", phone: "+1 404 555 0132", handler: "Arham", stage: "Active", mrr: 4850, workStart: "2026-01-12", services: ["SEO", "Google Ads", "GMB"], health: 94 },
-  { id: "CL-1002", businessName: "Copper & Pine", customerName: "Daniel Ross", email: "daniel@copperpine.co", phone: "+1 702 555 0181", handler: "Hira", stage: "In Progress", mrr: 3200, workStart: "2026-06-03", services: ["Website", "Brand Guidelines"], health: 82 },
+  { id: "CL-1001", businessName: "Northstar Dental", customerName: "Maya Thompson", email: "maya@northstardental.com", phone: "+1 404 555 0132", mobile: "+1 404 555 0199", businessAddress: "1248 Peachtree St NE, Atlanta, GA 30309", handler: "Arham", stage: "Active", mrr: 4850, workStart: "2026-01-12", services: ["SEO", "Google Ads", "GMB"], health: 94 },
+  { id: "CL-1002", businessName: "Copper & Pine", customerName: "Daniel Ross", email: "daniel@copperpine.co", phone: "+1 702 555 0181", mobile: "+1 702 555 0182", businessAddress: "410 Fremont St, Las Vegas, NV 89101", handler: "Hira", stage: "In Progress", mrr: 3200, workStart: "2026-06-03", services: ["Website", "Brand Guidelines"], health: 82 },
   { id: "CL-1003", businessName: "Atlas Legal Group", customerName: "Farah Malik", email: "farah@atlaslegal.com", phone: "+1 312 555 0146", handler: "Arham", stage: "Active", mrr: 6200, workStart: "2025-11-21", services: ["SEO", "Facebook", "Ads Mgmt"], health: 76 },
   { id: "CL-1004", businessName: "Kindred Home Care", customerName: "Olivia Stone", email: "olivia@kindredcare.com", phone: "+1 214 555 0108", handler: "Sameer", stage: "Active", mrr: 3950, workStart: "2026-02-08", services: ["Instagram", "TikTok", "Video Editing"], health: 89 },
   { id: "CL-1005", businessName: "Vela Fitness", customerName: "Andre Lewis", email: "andre@velafit.com", phone: "+1 646 555 0194", handler: "Hira", stage: "In Progress", mrr: 2700, workStart: "2026-06-11", services: ["Logo/Design", "Instagram"], health: 68 },
@@ -76,6 +76,8 @@ export function getDemoClient(id: string): Client {
     workStart: "2026-06-20",
     services: [],
     health: 70,
+    mobile: "+1 000 000 0001",
+    businessAddress: "Address not set",
   };
 }
 

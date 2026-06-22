@@ -15,11 +15,13 @@ import {
   FileText,
   HandCoins,
   Mail,
+  MapPin,
   MessageSquareWarning,
   Pencil,
   Phone,
   Plus,
   Send,
+  Smartphone,
   UserRound,
 } from "lucide-react";
 import {
@@ -37,6 +39,19 @@ import { Avatar, Badge, Button, Field, Modal } from "./ui";
 
 const stageTone = (stage: Stage) => stage === "Active" ? "success" : stage === "In Progress" ? "warning" : "neutral";
 const statusTone = (status: Status | "In Progress") => status === "Paid" || status === "Sent" || status === "Resolved" || status === "Converted" ? "success" : status === "Late" || status === "Open" ? "danger" : status === "Pending" || status === "In Progress" || status === "Not Sent" ? "warning" : "neutral";
+
+type ClientHistoryEntry = {
+  id: string;
+  time: string;
+  actor: string;
+  message: string;
+  tag: string;
+};
+
+const displayValue = (value: unknown) => {
+  const text = String(value ?? "").trim();
+  return text || "Not set";
+};
 
 function DetailHeader({
   back,
@@ -85,16 +100,53 @@ export function ClientDetailView({ id }: { id: string }) {
   const reports = getClientReports(client);
   const complaints = getClientComplaints(client);
   const upsells = getClientUpsells(client);
+  const [history, setHistory] = useState<ClientHistoryEntry[]>(() => [
+    { id: "contact-created", time: "Today, 10:42", actor: original.handler, message: "logged a strategy contact", tag: "Contact created" },
+    { id: "invoice-timing", time: "Jun 18, 14:05", actor: "System", message: "updated invoice timing", tag: "Sent → On time" },
+    { id: "report-sent", time: "Jun 7, 09:12", actor: original.handler, message: `marked ${reports[0]?.label ?? "Report"} sent`, tag: "Pending → Sent" },
+    { id: "client-created", time: original.workStart, actor: "Director", message: "created the client master record", tag: original.id },
+  ]);
   const tabs = ["Overview", "Services", "Invoices", "Contacts", "Reports", "Complaints", "Upsells", "History"];
 
   function saveClient(formData: FormData) {
-    const businessName = String(formData.get("businessName") || client.businessName);
-    const customerName = String(formData.get("customerName") || client.customerName);
-    const email = String(formData.get("email") || client.email);
-    const phone = String(formData.get("phone") || client.phone);
-    const handler = String(formData.get("handler") || client.handler);
-    const stage = String(formData.get("stage") || client.stage) as Stage;
-    setClient({ ...client, businessName, customerName, email, phone, handler, stage });
+    const updatedClient = {
+      ...client,
+      businessName: String(formData.get("businessName") || client.businessName),
+      customerName: String(formData.get("customerName") || client.customerName),
+      email: String(formData.get("email") || client.email),
+      phone: String(formData.get("phone") || client.phone),
+      mobile: String(formData.get("mobile") || client.mobile || ""),
+      businessAddress: String(formData.get("businessAddress") || client.businessAddress || ""),
+      handler: String(formData.get("handler") || client.handler),
+      stage: String(formData.get("stage") || client.stage) as Stage,
+    };
+    const fields: Array<{ key: keyof typeof updatedClient; label: string }> = [
+      { key: "businessName", label: "Business name" },
+      { key: "customerName", label: "Customer name" },
+      { key: "email", label: "Email" },
+      { key: "phone", label: "Phone" },
+      { key: "mobile", label: "Mobile" },
+      { key: "businessAddress", label: "Business address" },
+      { key: "handler", label: "CST handler" },
+      { key: "stage", label: "Lifecycle stage" },
+    ];
+    const changes = fields.filter(({ key }) => displayValue(client[key]) !== displayValue(updatedClient[key]));
+    if (changes.length) {
+      const now = new Date();
+      const time = now.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+      const actor = "Current user";
+      setHistory((entries) => [
+        ...changes.map(({ key, label }, index) => ({
+          id: `client-edit-${now.getTime()}-${index}`,
+          time,
+          actor,
+          message: `updated ${label}: ${displayValue(client[key])} → ${displayValue(updatedClient[key])}`,
+          tag: "Client updated",
+        })),
+        ...entries,
+      ]);
+    }
+    setClient(updatedClient);
     setEditOpen(false);
   }
 
@@ -122,6 +174,8 @@ export function ClientDetailView({ id }: { id: string }) {
               <div><dt>Primary contact</dt><dd><UserRound size={15} />{client.customerName}</dd></div>
               <div><dt>Email</dt><dd><Mail size={15} /><a href={`mailto:${client.email}`}>{client.email}</a></dd></div>
               <div><dt>Phone</dt><dd><Phone size={15} /><a href={`tel:${client.phone}`}>{client.phone}</a></dd></div>
+              <div><dt>Mobile</dt><dd><Smartphone size={15} /><a href={`tel:${client.mobile || client.phone}`}>{client.mobile || "Not set"}</a></dd></div>
+              <div><dt>Business address</dt><dd><MapPin size={15} />{client.businessAddress || "Not set"}</dd></div>
               <div><dt>CST handler</dt><dd><Avatar name={client.handler} tone="violet" />{client.handler}</dd></div>
               <div><dt>Lifecycle stage</dt><dd><Badge tone={stageTone(client.stage)}>{client.stage}</Badge></dd></div>
               <div><dt>Work start</dt><dd><CalendarClock size={15} />{client.workStart}</dd></div>
@@ -139,7 +193,7 @@ export function ClientDetailView({ id }: { id: string }) {
         </div>
       )}
 
-      {tab === "Services" && <section className="panel"><div className="panel-head"><div><h2>Linked services</h2><p>Active line items drive current MRR and future invoice snapshots.</p></div><Link className="button secondary" href="/services"><Plus size={14} />Add service</Link></div><div className="record-cards">{client.services.length ? client.services.map((service) => <article key={service}><div className="record-icon"><BriefcaseBusiness size={17} /></div><div><strong>{service}</strong><span>Active since {client.workStart}</span></div><div className="record-value"><strong>${Math.round(client.mrr / client.services.length).toLocaleString()}</strong><span>monthly</span></div><Badge tone="success">Active</Badge></article>) : <EmptyInline text="No linked services yet" />}</div></section>}
+      {tab === "Services" && <section className="panel"><div className="panel-head"><div><h2>Linked services</h2><p>Services this client has purchased. Customer-specific pricing is managed in the client profile and invoices, not on the service catalog.</p></div><Button variant="secondary" onClick={() => setEditOpen(true)}><Plus size={14} />Manage services</Button></div><div className="record-cards">{client.services.length ? client.services.map((service) => <article key={service}><div className="record-icon"><BriefcaseBusiness size={17} /></div><div><strong>{service}</strong><span>Active service on this account</span></div><Badge tone="success">Active</Badge></article>) : <EmptyInline text="No linked services yet" />}</div></section>}
 
       {tab === "Invoices" && <section className="panel"><div className="panel-head"><div><h2>Invoice history</h2><p>Permanent monthly amount snapshots.</p></div><Link className="button secondary" href="/invoices">Full ledger</Link></div><div className="table-wrap"><table className="data-table"><thead><tr><th>Invoice</th><th>Month</th><th>Amount</th><th>Due</th><th>Status</th></tr></thead><tbody>{invoices.map((invoice) => <tr key={invoice.id}><td><Link className="record-link" href={`/invoices/${invoice.id}`}>{invoice.id}</Link></td><td>{invoice.month}</td><td><strong>${invoice.amount.toLocaleString()}</strong></td><td>{invoice.due}</td><td><Badge tone={statusTone(invoice.status)}>{invoice.status}</Badge></td></tr>)}</tbody></table></div></section>}
 
@@ -151,7 +205,7 @@ export function ClientDetailView({ id }: { id: string }) {
 
       {tab === "Upsells" && <section className="panel"><div className="panel-head"><div><h2>Upsell pipeline</h2><p>Expansion opportunities linked to this account.</p></div><Link className="button secondary" href="/upsells"><Plus size={14} />New opportunity</Link></div><div className="record-cards">{upsells.map((upsell) => <article key={upsell.id}><div className="record-icon"><HandCoins size={17} /></div><div><strong>{upsell.service}</strong><span>{upsell.date}</span></div><div className="record-value"><strong>${upsell.revenue.toLocaleString()}</strong><span>potential</span></div><Badge tone={statusTone(upsell.status)}>{upsell.status}</Badge></article>)}</div></section>}
 
-      {tab === "History" && <section className="panel"><div className="panel-head"><div><h2>Audit history</h2><p>Traceable system and user changes.</p></div></div><div className="audit-list"><div><time>Today, 10:42</time><span><strong>{client.handler}</strong> logged a strategy contact</span><code>Contact created</code></div><div><time>Jun 18, 14:05</time><span><strong>System</strong> updated invoice timing</span><code>Sent → On time</code></div><div><time>Jun 7, 09:12</time><span><strong>{client.handler}</strong> marked {reports[0].label} sent</span><code>Pending → Sent</code></div><div><time>{client.workStart}</time><span><strong>Director</strong> created the client master record</span><code>{client.id}</code></div></div></section>}
+      {tab === "History" && <section className="panel"><div className="panel-head"><div><h2>Audit history</h2><p>Every client profile edit and operational log is recorded here.</p></div></div><div className="audit-list">{history.map((entry) => <div key={entry.id}><time>{entry.time}</time><span><strong>{entry.actor}</strong> {entry.message}</span><code>{entry.tag}</code></div>)}</div></section>}
 
       <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit client" description="Update human-owned master record fields. Computed totals remain locked.">
         <form action={saveClient}>
@@ -159,7 +213,9 @@ export function ClientDetailView({ id }: { id: string }) {
             <Field label="Business name"><input name="businessName" defaultValue={client.businessName} required /></Field>
             <Field label="Customer name"><input name="customerName" defaultValue={client.customerName} required /></Field>
             <Field label="Email"><input name="email" type="email" defaultValue={client.email} required /></Field>
-            <Field label="Phone"><input name="phone" defaultValue={client.phone} /></Field>
+            <Field label="Phone"><input name="phone" defaultValue={client.phone} required /></Field>
+            <Field label="Mobile"><input name="mobile" defaultValue={client.mobile || ""} placeholder="Mobile number" /></Field>
+            <Field label="Business address"><textarea name="businessAddress" defaultValue={client.businessAddress || ""} placeholder="Street, city, state, ZIP" /></Field>
             <Field label="CST handler"><select name="handler" defaultValue={client.handler}><option>Arham</option><option>Hira</option><option>Sameer</option><option>Unassigned</option></select></Field>
             <Field label="Lifecycle stage"><select name="stage" defaultValue={client.stage}><option>In Progress</option><option>Active</option><option>Not Active</option></select></Field>
           </div>
@@ -239,8 +295,10 @@ export function InvoiceDetailView({ id }: { id: string }) {
 export function OnboardingDetailView({ id }: { id: string }) {
   const client = useMemo(() => getDemoClient(id), [id]);
   const initial = useMemo(() => getOnboardingRecord(client), [client]);
+  const [savedRecord, setSavedRecord] = useState(initial);
   const [record, setRecord] = useState(initial);
   const [editOpen, setEditOpen] = useState(false);
+  const [checklistHistory, setChecklistHistory] = useState<ClientHistoryEntry[]>([]);
   const reports = getClientReports(client);
   const checklist = [
     { label: "Same-day welcome call", done: record.calledSameDay, due: "Day 0" },
@@ -250,12 +308,46 @@ export function OnboardingDetailView({ id }: { id: string }) {
     { label: "Biweekly report delivered", done: record.day >= 14, due: "Day 14" },
     { label: "Monthly report and graduation", done: record.day >= 30, due: "Day 30" },
   ];
+  const savedChecklist = [
+    { label: "Same-day welcome call", done: savedRecord.calledSameDay },
+    { label: "Same-day welcome message", done: savedRecord.welcomeSameDay },
+    { label: "Account access received", done: savedRecord.accessReceived },
+    { label: "Week 1 report delivered", done: savedRecord.day >= 7 },
+    { label: "Biweekly report delivered", done: savedRecord.day >= 14 },
+    { label: "Monthly report and graduation", done: savedRecord.day >= 30 },
+  ];
   const progress = Math.round(checklist.filter((item) => item.done).length / checklist.length * 100);
+  const hasChecklistChanges = checklist.some((item, index) => item.done !== savedChecklist[index]?.done);
 
   function toggleChecklist(index: number) {
     if (index === 0) setRecord({ ...record, calledSameDay: !record.calledSameDay });
     if (index === 1) setRecord({ ...record, welcomeSameDay: !record.welcomeSameDay });
     if (index === 2) setRecord({ ...record, accessReceived: !record.accessReceived });
+  }
+
+  function saveChecklistChanges() {
+    const changes = checklist
+      .map((item, index) => ({ label: item.label, before: savedChecklist[index]?.done ?? false, after: item.done }))
+      .filter((change) => change.before !== change.after);
+
+    if (!changes.length) return;
+
+    const timestamp = new Date().toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    setChecklistHistory((current) => [
+      ...changes.map((change, index) => ({
+        id: `${Date.now()}-${index}`,
+        time: timestamp,
+        actor: client.handler,
+        message: `${change.after ? "Completed" : "Reopened"} onboarding milestone: ${change.label}`,
+        tag: change.after ? "Completed" : "Reopened",
+      })),
+      ...current,
+    ]);
+    setSavedRecord(record);
+  }
+
+  function discardChecklistChanges() {
+    setRecord(savedRecord);
   }
 
   return (
@@ -274,6 +366,7 @@ export function OnboardingDetailView({ id }: { id: string }) {
       <div className="detail-grid">
         <section className="panel detail-main">
           <div className="panel-head"><div><h2>Onboarding checklist</h2><p>Complete milestones through automatic Day-30 graduation.</p></div><span className="progress-label">{progress}% complete</span></div>
+          {hasChecklistChanges && <div className="alert-banner warning" style={{ margin: "0 0 14px" }}><AlertTriangle size={18} /><div><strong>Unsaved checklist changes</strong><span>Milestone clicks are temporary until Save changes is pressed. Nothing is written to History before saving.</span></div><div className="side-actions" style={{ marginTop: 0 }}><Button variant="secondary" onClick={discardChecklistChanges}>Discard</Button><Button onClick={saveChecklistChanges}><Check size={15} />Save changes</Button></div></div>}
           <div className="milestone-progress"><i style={{ width: `${progress}%` }} /></div>
           <div className="checklist">
             {checklist.map((item, index) => <button key={item.label} onClick={() => index < 3 && toggleChecklist(index)} className={item.done ? "done" : ""} disabled={index >= 3}><span>{item.done ? <Check size={15} /> : null}</span><div><strong>{item.label}</strong><small>{item.done ? "Completed" : "Pending"} · {item.due}</small></div>{item.done ? <Badge tone="success">Done</Badge> : <Badge tone={item.due === "Within 24h" && record.day > 1 ? "danger" : "warning"}>Open</Badge>}</button>)}
@@ -286,7 +379,7 @@ export function OnboardingDetailView({ id }: { id: string }) {
           <div className="owner-card"><Avatar name={client.handler} tone="violet" /><div><strong>{client.handler}</strong><span>Customer Success Team</span></div><Mail size={15} /></div>
         </aside>
       </div>
-      <section className="panel onboarding-history"><div className="panel-head"><div><h2>Lifecycle history</h2><p>System and checklist activity</p></div></div><div className="audit-list"><div><time>Today</time><span><strong>{client.handler}</strong> reviewed onboarding progress</span><code>Day {record.day}</code></div>{record.highAlertSent && <div><time>Jun 19</time><span><strong>System</strong> sent a high alert to Asad</span><code>Our-side delay</code></div>}<div><time>{client.workStart}</time><span><strong>Director</strong> started onboarding</span><code>In Progress</code></div></div></section>
+      <section className="panel onboarding-history"><div className="panel-head"><div><h2>Lifecycle history</h2><p>System and checklist activity</p></div></div><div className="audit-list">{checklistHistory.map((entry) => <div key={entry.id}><time>{entry.time}</time><span><strong>{entry.actor}</strong> {entry.message}</span><code>{entry.tag}</code></div>)}<div><time>Today</time><span><strong>{client.handler}</strong> reviewed onboarding progress</span><code>Day {savedRecord.day}</code></div>{savedRecord.highAlertSent && <div><time>Jun 19</time><span><strong>System</strong> sent a high alert to Asad</span><code>Our-side delay</code></div>}<div><time>{client.workStart}</time><span><strong>Director</strong> started onboarding</span><code>In Progress</code></div></div></section>
       <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Update onboarding" description="Record delay ownership, escalation facts, and overall status." footer={<><Button variant="secondary" onClick={() => setEditOpen(false)}>Cancel</Button><Button onClick={() => setEditOpen(false)}><Check size={15} />Save update</Button></>}>
         <div className="form-grid"><Field label="Overall status"><select defaultValue={record.status}><option>In Progress</option><option>Ready for review</option><option>Graduating this week</option></select></Field><Field label="Delay side"><select defaultValue={record.delaySide}><option>N/A</option><option>Client</option><option>Our</option></select></Field><Field label="Delay reason"><textarea defaultValue={record.delayReason} placeholder="Required when a delay is recorded" /></Field><Field label="Escalation"><select defaultValue={record.flaggedToAsad ? "Flagged to Asad" : "No escalation"}><option>No escalation</option><option>Flagged to Asad</option></select></Field></div>
       </Modal>

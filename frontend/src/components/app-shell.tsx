@@ -4,11 +4,11 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
-  BarChart3, Bell, BriefcaseBusiness, Check, ChevronDown, ClipboardCheck, ContactRound,
+  BarChart3, Bell, Check, ChevronDown, ClipboardCheck, ContactRound,
   CreditCard, FileText, HandCoins, LayoutDashboard, LifeBuoy, LogOut, Menu,
   MessageSquareWarning, Moon, Search, Settings, Sun, Users, X,
 } from "lucide-react";
-import { clients, invoices, services } from "@/lib/demo-data";
+import { clients, invoices } from "@/lib/demo-data";
 import { clearSession, getSession, roleLabel, SESSION_EVENT, type AuthUser } from "@/lib/auth";
 import { Button, Modal } from "./ui";
 
@@ -17,7 +17,6 @@ const nav: ReadonlyArray<{ href: string; label: string; icon: typeof Search; cou
   { href: "/clients", label: "Clients", icon: Users },
   { href: "/onboarding", label: "Onboarding", icon: ClipboardCheck, count: 6 },
   { href: "/invoices", label: "Invoices", icon: CreditCard, count: 5 },
-  { href: "/services", label: "Services", icon: BriefcaseBusiness },
   { href: "/contacts", label: "Contacts", icon: ContactRound },
   { href: "/reports", label: "Reports", icon: FileText, count: 3 },
   { href: "/complaints", label: "Complaints", icon: MessageSquareWarning, count: 2 },
@@ -99,10 +98,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const invoiceResults = invoices
       .filter((invoice) => `${invoice.id} ${invoice.client} ${invoice.month}`.toLowerCase().includes(term))
       .map((invoice) => ({ href: `/invoices/${invoice.id}`, label: invoice.id, description: `${invoice.client} · ${invoice.month}`, icon: CreditCard }));
-    const serviceResults = services
-      .filter((service) => service.toLowerCase().includes(term))
-      .map((service) => ({ href: `/services?search=${encodeURIComponent(service)}`, label: service, description: "Service catalog", icon: BriefcaseBusiness }));
-    return [...moduleResults, ...clientResults, ...invoiceResults, ...serviceResults].slice(0, 14);
+    return [...moduleResults, ...clientResults, ...invoiceResults].slice(0, 14);
   }, [query]);
 
   function toggleTheme() {
@@ -185,7 +181,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="command-dialog" role="dialog" aria-modal="true" aria-label="Global search" onMouseDown={(event) => event.stopPropagation()} data-testid="search-dialog">
             <div className="command-input">
               <Search size={20} />
-              <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search modules, clients, invoices, services…" />
+              <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search modules, clients, invoices…" />
               <button onClick={closeSearch}>ESC</button>
             </div>
             <div className="command-results">

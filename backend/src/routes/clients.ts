@@ -17,6 +17,7 @@ import { AppError } from '../utils/errors.js';
 import { pagination } from '../utils/pagination.js';
 import { allowRoles } from '../middleware/auth.js';
 import { User } from '../models/User.js';
+import { AuditLog } from '../models/AuditLog.js';
 import { canReassignClient } from '../services/team-policy.js';
 
 const objectId = z.string().regex(/^[0-9a-f]{24}$/i);
@@ -33,6 +34,27 @@ const serviceLine = z.object({ service: objectId, monthlyAmount: z.number().nonn
 const createBody = z.object({ ...bodyShape, services: z.array(serviceLine).max(50).default([]) }).strict()
   .refine(validClientDates, { message: 'workStartDate cannot precede saleDate and Not Active clients require dateChurned' })
   .refine((value) => new Set(value.services.map((row) => row.service)).size === value.services.length, { message: 'Duplicate client service' });
+
+const clientFieldLabels: Record<string, string> = {
+  businessName: 'Business name',
+  customerName: 'Customer name',
+  contactNumber: 'Phone',
+  email: 'Email',
+  address: 'Business address',
+  cstHandler: 'CST handler',
+  lifecycleStage: 'Lifecycle stage',
+  dateChurned: 'Date churned',
+  saleDate: 'Sale date',
+  workStartDate: 'Work start date',
+};
+const auditDisplay = (value: unknown) => {
+  if (value == null || value === '') return 'Not set';
+  if (value instanceof Date) return value.toISOString();
+  return String(value);
+};
+const collectClientChanges = (before: Record<string, unknown>, after: Record<string, unknown>, keys: string[]) => keys
+  .filter((key) => auditDisplay(before[key]) !== auditDisplay(after[key]))
+  .map((key) => ({ field: key, label: clientFieldLabels[key] ?? key, before: auditDisplay(before[key]), after: auditDisplay(after[key]) }));
 
 export const clientsRouter = Router();
 clientsRouter.get('/', validate(z.object({ page:z.coerce.number().int().positive().optional(), limit:z.coerce.number().int().min(1).max(100).optional(), stage:z.enum(['In Progress','Active','Not Active']).optional(), handler:objectId.optional(), search:z.string().trim().max(100).optional() }).strict(), 'query'), asyncHandler(async (req, res) => {
@@ -77,6 +99,13 @@ clientsRouter.get('/:id', validate(z.object({ id:objectId }).strict(), 'params')
   ]);
   res.json({ success: true, data: { ...client, ...computed, onboarding, activitySummary: { invoices: invoiceCount, contacts: contactCount, complaints: complaintCount, reports: reportCount, upsells: upsellCount }, recentInvoices } });
 }));
+
+clientsRouter.get('/:id/history', validate(z.object({ id:objectId }).strict(), 'params'), asyncHandler(async (req, res) => {
+  const client = await Client.findById(String(req.params.id)).select('_id').lean();
+  if (!client) throw new AppError(404, 'Client not found');
+  const items = await AuditLog.find({ recordId: String(client._id) }).populate('actor', 'name email role').sort({ createdAt: -1 }).limit(200).lean();
+  res.json({ success: true, data: items });
+}));
 clientsRouter.patch('/:id', validate(z.object({ id:objectId }).strict(), 'params'), validate(z.object(bodyShape).partial().strict()), asyncHandler(async (req, res) => {
   const client = await Client.findById(String(req.params.id)); if (!client) throw new AppError(404, 'Client not found');
   if ('cstHandler' in req.body) {
@@ -97,7 +126,9 @@ clientsRouter.patch('/:id', validate(z.object({ id:objectId }).strict(), 'params
   if (nextStage === 'Not Active' && !nextChurnDate) throw new AppError(422, 'dateChurned is required for Not Active clients');
   const before = client.toObject(); Object.assign(client, req.body); await client.save();
   if (client.lifecycleStage === 'In Progress') await OnboardingChecklist.updateOne({ client: client._id }, { $setOnInsert: { client: client._id } }, { upsert: true });
-  await audit({ actor: req.user?._id, action: 'cstHandler' in req.body ? 'REASSIGN' : 'UPDATE', recordType: 'Client', recordId: client._id, before, after: client.toObject() });
+  const after = client.toObject();
+  const changes = collectClientChanges(before as unknown as Record<string, unknown>, after as unknown as Record<string, unknown>, Object.keys(req.body));
+  await audit({ actor: req.user?._id, action: 'cstHandler' in req.body ? 'REASSIGN' : 'UPDATE', recordType: 'Client', recordId: client._id, before, after: { ...after, changes } });
   res.json({ success: true, data: client });
 }));
 clientsRouter.patch('/:id/assignment',
