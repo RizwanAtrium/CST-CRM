@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  ArrowRightLeft, Bell, Building2, Check, Database, Ellipsis, History, KeyRound,
+  ArrowRightLeft, Bell, Building2, Check, Database, Ellipsis, Eye, EyeOff, History, KeyRound,
   LockKeyhole, Play, ShieldCheck, UserCog, UserPlus, Users,
 } from "lucide-react";
 import { crmApi, type ApiAssignmentClient, type ApiJobRun, type ApiTeamUser, type ApiWorkspaceSettings } from "@/lib/api";
@@ -67,6 +67,8 @@ export function SettingsView({ initialTab = "Workspace" }: { initialTab?: string
   const [member, setMember] = useState<MemberDraft>(emptyMember);
   const [memberError, setMemberError] = useState("");
   const [savingMember, setSavingMember] = useState(false);
+  const [showMemberPassword, setShowMemberPassword] = useState(false);
+  const [showMemberConfirm, setShowMemberConfirm] = useState(false);
   const [fromHandler, setFromHandler] = useState("");
   const [toHandler, setToHandler] = useState("");
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
@@ -149,6 +151,8 @@ export function SettingsView({ initialTab = "Workspace" }: { initialTab?: string
   function openInvite() {
     setMember({ ...emptyMember(), role: "CST Handler" });
     setMemberError("");
+    setShowMemberPassword(false);
+    setShowMemberConfirm(false);
     setMemberModal("invite");
   }
 
@@ -156,6 +160,8 @@ export function SettingsView({ initialTab = "Workspace" }: { initialTab?: string
     if (!isDirector && !(isManager && row.role === "CST Handler")) return;
     setMember({ ...row, password: "", confirmPassword: "" });
     setMemberError("");
+    setShowMemberPassword(false);
+    setShowMemberConfirm(false);
     setMemberModal("edit");
   }
 
@@ -215,7 +221,7 @@ export function SettingsView({ initialTab = "Workspace" }: { initialTab?: string
     </div>
 
     <Modal open={memberModal !== null} onClose={() => setMemberModal(null)} title={memberModal === "invite" ? "Create team account" : "Manage team account"} description={isManager ? "CST Managers can create and manage Handler accounts." : "Set sign-in credentials and role access."} footer={<><Button variant="secondary" onClick={() => setMemberModal(null)}>Cancel</Button><Button onClick={saveMember} disabled={savingMember}>{savingMember ? "Saving…" : memberModal === "invite" ? "Create account" : "Save account"}</Button></>}>
-      <div className="form-grid"><Field label="Full name"><input value={member.name} onChange={(event) => setMember((current) => ({ ...current, name: event.target.value }))} autoComplete="name" /></Field><Field label="Login email"><input type="email" value={member.email} disabled={memberModal === "edit"} onChange={(event) => setMember((current) => ({ ...current, email: event.target.value }))} autoComplete="email" /></Field><Field label="Role"><select value={member.role} disabled={isManager} onChange={(event) => setMember((current) => ({ ...current, role: event.target.value as TeamRole }))}>{isDirector && <option>Super Admin</option>}{isDirector && <option>CST Manager</option>}<option>CST Handler</option></select></Field><Field label="Account status"><select value={member.active ? "Active" : "Disabled"} onChange={(event) => setMember((current) => ({ ...current, active: event.target.value === "Active" }))}><option>Active</option><option>Disabled</option></select></Field><Field label={memberModal === "invite" ? "Login password" : "New password (optional)"} hint="8+ characters with uppercase, lowercase, and a number. Never shown after saving."><div className="input-with-icon"><LockKeyhole size={15} /><input type="password" value={member.password} minLength={8} maxLength={128} required={memberModal === "invite"} autoComplete="new-password" onChange={(event) => setMember((current) => ({ ...current, password: event.target.value }))} /></div></Field><Field label="Confirm password"><div className="input-with-icon"><LockKeyhole size={15} /><input type="password" value={member.confirmPassword} minLength={8} maxLength={128} required={memberModal === "invite" || !!member.password} autoComplete="new-password" onChange={(event) => setMember((current) => ({ ...current, confirmPassword: event.target.value }))} /></div></Field></div>
+      <div className="form-grid"><Field label="Full name"><input value={member.name} onChange={(event) => setMember((current) => ({ ...current, name: event.target.value }))} autoComplete="name" /></Field><Field label="Login email"><input type="email" value={member.email} disabled={memberModal === "edit"} onChange={(event) => setMember((current) => ({ ...current, email: event.target.value }))} autoComplete="email" /></Field><Field label="Role"><select value={member.role} disabled={isManager} onChange={(event) => setMember((current) => ({ ...current, role: event.target.value as TeamRole }))}>{isDirector && <option>Super Admin</option>}{isDirector && <option>CST Manager</option>}<option>CST Handler</option></select></Field><Field label="Account status"><select value={member.active ? "Active" : "Disabled"} onChange={(event) => setMember((current) => ({ ...current, active: event.target.value === "Active" }))}><option>Active</option><option>Disabled</option></select></Field><Field label={memberModal === "invite" ? "Login password" : "New password (optional)"} hint={memberModal === "edit" ? "Existing password is encrypted and cannot be shown. Enter a new one only to reset it." : "8+ characters with uppercase, lowercase, and a number."}><div className="input-with-icon password-field"><LockKeyhole size={15} /><input type={showMemberPassword ? "text" : "password"} value={member.password} minLength={8} maxLength={128} required={memberModal === "invite"} autoComplete="new-password" onChange={(event) => setMember((current) => ({ ...current, password: event.target.value }))} /><button type="button" className="password-toggle" onClick={() => setShowMemberPassword((value) => !value)} aria-label={showMemberPassword ? "Hide password" : "Show password"}>{showMemberPassword ? <EyeOff size={15} /> : <Eye size={15} />}</button></div></Field><Field label="Confirm password"><div className="input-with-icon password-field"><LockKeyhole size={15} /><input type={showMemberConfirm ? "text" : "password"} value={member.confirmPassword} minLength={8} maxLength={128} required={memberModal === "invite" || !!member.password} autoComplete="new-password" onChange={(event) => setMember((current) => ({ ...current, confirmPassword: event.target.value }))} /><button type="button" className="password-toggle" onClick={() => setShowMemberConfirm((value) => !value)} aria-label={showMemberConfirm ? "Hide password" : "Show password"}>{showMemberConfirm ? <EyeOff size={15} /> : <Eye size={15} />}</button></div></Field></div>
       {memberError && <div className="form-error" role="alert">{memberError}</div>}
     </Modal>
   </>;
