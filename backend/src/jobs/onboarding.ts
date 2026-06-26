@@ -13,6 +13,14 @@ export async function runOnboardingJobs(now = new Date()) {
     const clients = await Client.find({ lifecycleStage: 'In Progress' });
     let graduated = 0, reports = 0, alerts = 0;
     for (const client of clients) {
+      if (!client.workStartDate) {
+        const checklist = await OnboardingChecklist.findOne({ client: client._id });
+        if (checklist?.delaySide === 'Our' && !checklist.highAlertSent) {
+          checklist.highAlertSent = true; checklist.flaggedToAsad = true; checklist.alertDatetime = now; await checklist.save(); alerts++;
+          await audit({ action: 'ONBOARDING_HIGH_ALERT', recordType: 'OnboardingChecklist', recordId: checklist._id, source: 'SYSTEM' });
+        }
+        continue;
+      }
       const age = Math.floor((now.getTime() - client.workStartDate.getTime()) / 86400000);
       for (const [label, day] of [['Week 1', 7], ['Biweekly', 14], ['Monthly', 30]] as const) {
         if (age >= day) {

@@ -23,6 +23,7 @@ const handoffBody = z.object({
   opportunityId: z.string().trim().min(1).max(120),
   customer: z.object({
     businessName: z.string().trim().min(1),
+    niche: z.string().trim().min(1),
     customerName: z.string().trim().optional(),
     phoneNumber: z.string().trim().optional(),
     mobileNumber: z.string().trim().optional(),
@@ -34,6 +35,7 @@ const handoffBody = z.object({
   services: z.array(z.object({
     name: z.string().trim().min(1),
     amount: z.number().nonnegative(),
+    billingType: z.enum(['Recurring', 'One Time']).default('Recurring'),
   }).strict()).min(1).max(50),
   saleDate: z.coerce.date(),
   paidAt: z.coerce.date(),
@@ -109,15 +111,17 @@ salesIntegrationRouter.post('/handoffs', validate(handoffBody), asyncHandler(asy
 
   const client = await Client.create({
     businessName: input.customer.businessName,
+    niche: input.customer.niche,
     customerName: input.customer.customerName,
     contactNumber: input.customer.phoneNumber || input.customer.mobileNumber,
+    mobileNumber: input.customer.mobileNumber,
     email: input.customer.email,
     address: input.customer.businessAddress,
     state: input.customer.state,
     country: input.customer.country,
     cstHandler: input.cstHandlerId,
     saleDate: input.saleDate,
-    workStartDate: input.workStartDate ?? input.paidAt,
+    workStartDate: input.workStartDate ?? null,
     lifecycleStage: 'In Progress',
     sourceSystem: 'SALES_CRM',
     sourceReference: input.handoffId,
@@ -136,6 +140,7 @@ salesIntegrationRouter.post('/handoffs', validate(handoffBody), asyncHandler(asy
         client: client._id,
         service: services[index]!._id,
         monthlyAmount: line.amount,
+        billingType: line.billingType,
         active: true,
       }))),
     ]);
@@ -155,6 +160,16 @@ salesIntegrationRouter.post('/handoffs', validate(handoffBody), asyncHandler(asy
     source: 'SYSTEM',
     after: { handoffId: input.handoffId, opportunityId: input.opportunityId, services: input.services },
   });
+
+  if (input.cstHandlerId) {
+    await audit({
+      action: 'IN_APP_NOTIFICATION_CLIENT_ASSIGNED',
+      recordType: 'Client',
+      recordId: client._id,
+      source: 'SYSTEM',
+      after: { cstHandler: input.cstHandlerId, client: input.customer.businessName }
+    });
+  }
 
   res.status(201).json({
     success: true,

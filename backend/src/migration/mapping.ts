@@ -41,7 +41,7 @@ const delaySide = (value: CellValue, aliases: MigrationConfig['delayAliases']) =
 
 export function validateMigrationConfig(config: MigrationConfig) {
   if (!config.clientSheet?.trim()) throw new Error('clientSheet is required');
-  if (!config.clientColumns?.businessName || !config.clientColumns.saleDate || !config.clientColumns.workStartDate) throw new Error('clientColumns.businessName, saleDate, and workStartDate are required');
+  if (!config.clientColumns?.businessName || !config.clientColumns.niche || !config.clientColumns.saleDate || !config.clientColumns.workStartDate) throw new Error('clientColumns.businessName, niche, saleDate, and workStartDate are required');
   if (!Array.isArray(config.services)) throw new Error('services must be an array');
   if (!Array.isArray(config.historicalMonths) || config.historicalMonths.length === 0) throw new Error('historicalMonths is required; explicitly map every BH-CE column to YYYY-MM');
   const months = new Set<string>();
@@ -79,10 +79,15 @@ export function buildMigrationPlan(
     }
     const source = rows[0]!;
     const row = source.values;
+    const niche = text(row[config.clientColumns.niche]);
     const saleDate = date(row[config.clientColumns.saleDate]);
     const workStartDate = date(row[config.clientColumns.workStartDate]);
     const lifecycleStage = stage(config.clientColumns.lifecycleStage ? row[config.clientColumns.lifecycleStage] : undefined, config.stageAliases);
     const dateChurned = config.clientColumns.dateChurned ? date(row[config.clientColumns.dateChurned]) : undefined;
+    if (!niche) {
+      rejected.push({ sheet: config.clientSheet, row: source.rowNumber, reason: 'Missing NICHE', businessName: text(row[config.clientColumns.businessName]) });
+      continue;
+    }
     if (!saleDate || !workStartDate) {
       rejected.push({ sheet: config.clientSheet, row: source.rowNumber, reason: 'Invalid saleDate or workStartDate', businessName: text(row[config.clientColumns.businessName]) });
       continue;
@@ -114,6 +119,7 @@ export function buildMigrationPlan(
     clients.push({
       sourceRow: source.rowNumber,
       businessName: text(row[config.clientColumns.businessName]),
+      niche,
       customerName: optional(row, config.clientColumns.customerName),
       contactNumber: optional(row, config.clientColumns.contactNumber),
       email: optional(row, config.clientColumns.email)?.toLowerCase(),

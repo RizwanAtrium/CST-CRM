@@ -5,22 +5,25 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   BarChart3, Bell, Check, ChevronDown, ClipboardCheck, ContactRound,
-  CreditCard, FileText, HandCoins, LayoutDashboard, LifeBuoy, LogOut, Menu,
-  MessageSquareWarning, Moon, Search, Settings, Sun, Users, X,
+  BriefcaseBusiness, CreditCard, FileText, HandCoins, LayoutDashboard, LifeBuoy, LogOut, Menu,
+  MessageSquare, MessageSquareWarning, Moon, Search, Settings, Sun, Users, X,
 } from "lucide-react";
-import { clients, invoices } from "@/lib/demo-data";
+import { crmApi } from "@/lib/api";
 import { clearSession, getSession, roleLabel, SESSION_EVENT, type AuthUser } from "@/lib/auth";
+import type { ActivityRecord, Client, Invoice } from "@/lib/types";
 import { Button, Modal } from "./ui";
 
-const nav: ReadonlyArray<{ href: string; label: string; icon: typeof Search; count?: number }> = [
+const nav: ReadonlyArray<{ href: string; label: string; icon: typeof Search }> = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/clients", label: "Clients", icon: Users },
-  { href: "/onboarding", label: "Onboarding", icon: ClipboardCheck, count: 6 },
-  { href: "/invoices", label: "Invoices", icon: CreditCard, count: 5 },
+  { href: "/onboarding", label: "Onboarding", icon: ClipboardCheck },
+  { href: "/invoices", label: "Invoices", icon: CreditCard },
+  { href: "/services", label: "Services", icon: BriefcaseBusiness },
   { href: "/contacts", label: "Contacts", icon: ContactRound },
-  { href: "/reports", label: "Reports", icon: FileText, count: 3 },
-  { href: "/complaints", label: "Complaints", icon: MessageSquareWarning, count: 2 },
+  { href: "/reports", label: "Reports", icon: FileText },
+  { href: "/complaints", label: "Complaints", icon: MessageSquareWarning },
   { href: "/upsells", label: "Upsells", icon: HandCoins },
+  { href: "/chat", label: "Chat", icon: MessageSquare },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
 ];
 
@@ -46,6 +49,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [helpOpen, setHelpOpen] = useState(false);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [workspaceName, setWorkspaceName] = useState("Workspace");
+  const [searchClients, setSearchClients] = useState<Client[]>([]);
+  const [searchInvoices, setSearchInvoices] = useState<Invoice[]>([]);
+  const [activities, setActivities] = useState<ActivityRecord[]>([]);
 
   useEffect(() => {
     const saved = localStorage.getItem("cst-theme");
@@ -68,7 +75,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!currentUser) return;
+    let cancelled = false;
+    void Promise.all([
+      crmApi.workspaceSettings(),
+      crmApi.clients(),
+      crmApi.invoices(),
+      crmApi.activities(),
+    ]).then(([workspace, clients, invoices, activity]) => {
+      if (cancelled) return;
+      setWorkspaceName(workspace.name);
+      setSearchClients(clients);
+      setSearchInvoices(invoices);
+      setActivities(activity);
+    }).catch(() => {
+      if (!cancelled) {
+        setSearchClients([]);
+        setSearchInvoices([]);
+        setActivities([]);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [currentUser]);
+
+  useEffect(() => {
     function handleKeyboard(event: KeyboardEvent) {
+      if (event.key === "PrintScreen" || ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "p")) {
+        event.preventDefault();
+        void navigator.clipboard?.writeText("Screenshots are disabled by CST CRM policy.");
+      }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setSearchOpen(true);
@@ -81,8 +116,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setWorkspaceOpen(false);
       }
     }
+    function preventCapture(event: Event) {
+      event.preventDefault();
+    }
+    function preventContext(event: MouseEvent) {
+      event.preventDefault();
+    }
     window.addEventListener("keydown", handleKeyboard);
-    return () => window.removeEventListener("keydown", handleKeyboard);
+    window.addEventListener("beforeprint", preventCapture);
+    window.addEventListener("contextmenu", preventContext);
+    return () => {
+      window.removeEventListener("keydown", handleKeyboard);
+      window.removeEventListener("beforeprint", preventCapture);
+      window.removeEventListener("contextmenu", preventContext);
+    };
   }, []);
 
   const searchResults = useMemo<SearchResult[]>(() => {
@@ -92,14 +139,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       .map((item) => ({ href: item.href, label: item.label, description: "Open module", icon: item.icon }));
     if (!term) return moduleResults;
 
-    const clientResults = clients
+    const clientResults = searchClients
       .filter((client) => `${client.businessName} ${client.customerName} ${client.email} ${client.id}`.toLowerCase().includes(term))
       .map((client) => ({ href: `/clients/${client.id}`, label: client.businessName, description: `${client.customerName} · ${client.id}`, icon: Users }));
-    const invoiceResults = invoices
+    const invoiceResults = searchInvoices
       .filter((invoice) => `${invoice.id} ${invoice.client} ${invoice.month}`.toLowerCase().includes(term))
       .map((invoice) => ({ href: `/invoices/${invoice.id}`, label: invoice.id, description: `${invoice.client} · ${invoice.month}`, icon: CreditCard }));
     return [...moduleResults, ...clientResults, ...invoiceResults].slice(0, 14);
-  }, [query]);
+  }, [query, searchClients, searchInvoices]);
 
   function toggleTheme() {
     const next = !dark;
@@ -129,7 +176,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
         <button className="workspace-pill" style={{ width: "100%", textAlign: "left" }} onClick={() => setWorkspaceOpen(true)} aria-label="Open workspace menu">
           <div className="avatar avatar-violet">TF</div>
-          <div><strong>The Fine Dudes</strong><span>{currentUser ? `${roleLabel(currentUser.role)} workspace` : "CRM workspace"}</span></div>
+          <div><strong>{workspaceName}</strong><span>{currentUser ? `${roleLabel(currentUser.role)} workspace` : "CRM workspace"}</span></div>
           <ChevronDown size={15} />
         </button>
         <nav className="nav-list" aria-label="Primary navigation">
@@ -139,7 +186,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             const active = path === item.href || path.startsWith(`${item.href}/`);
             return (
               <Link key={item.href} href={item.href} className={`nav-item ${active ? "active" : ""}`} onClick={() => setMobileOpen(false)} data-testid={`nav-${item.label.toLowerCase()}`}>
-                <Icon size={18} strokeWidth={1.9} /><span>{item.label}</span>{item.count ? <em>{item.count}</em> : null}
+                <Icon size={18} strokeWidth={1.9} /><span>{item.label}</span>
               </Link>
             );
           })}
@@ -150,8 +197,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <button className="nav-item" onClick={() => setHelpOpen(true)}><LifeBuoy size={18} /><span>Help & support</span></button>
         </nav>
         <button className="sidebar-profile" style={{ ...triggerStyle, width: "100%" }} onClick={() => setUserOpen(true)} aria-label="Open user menu">
-          <div className="avatar">{currentUser?.name.split(" ").map((part) => part[0]).slice(0, 2).join("") || "AS"}</div>
-          <div><strong>{currentUser?.name || "Asad Sheikh"}</strong><span>{currentUser ? roleLabel(currentUser.role) : "Director"}</span></div>
+          <div className="avatar">{currentUser?.name.split(" ").map((part) => part[0]).slice(0, 2).join("") || "U"}</div>
+          <div><strong>{currentUser?.name || "User"}</strong><span>{currentUser ? roleLabel(currentUser.role) : "Workspace"}</span></div>
           <ChevronDown size={15} />
         </button>
       </aside>
@@ -169,7 +216,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
             <div className="topbar-divider" />
             <button className="topbar-user" style={triggerStyle} onClick={() => setUserOpen(true)} aria-label="Open user menu">
-              <div className="avatar small">{currentUser?.name.split(" ").map((part) => part[0]).slice(0, 2).join("") || "AS"}</div><div><strong>{currentUser?.name.split(" ")[0] || "Asad"}</strong><span>{currentUser ? roleLabel(currentUser.role) : "Director"}</span></div><ChevronDown size={14} />
+              <div className="avatar small">{currentUser?.name.split(" ").map((part) => part[0]).slice(0, 2).join("") || "U"}</div><div><strong>{currentUser?.name.split(" ")[0] || "User"}</strong><span>{currentUser ? roleLabel(currentUser.role) : "Workspace"}</span></div><ChevronDown size={14} />
             </button>
           </div>
         </header>
@@ -199,13 +246,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <Modal open={notificationsOpen} onClose={() => setNotificationsOpen(false)} title="Notifications" description="Items that need your attention." footer={<Button variant="secondary" onClick={() => setNotificationsRead(true)}><Check size={15} />Mark all read</Button>}>
         <div className="activity-list">
-          <Link className="activity-item" href="/invoices?status=Late" onClick={() => setNotificationsOpen(false)}><span className="activity-icon"><CreditCard size={15} /></span><div><strong>Invoice overdue</strong><span>Kindred Home Care · 12 days late</span></div><time>Now</time></Link>
-          <Link className="activity-item" href="/reports?status=Pending" onClick={() => setNotificationsOpen(false)}><span className="activity-icon"><FileText size={15} /></span><div><strong>Retention report due</strong><span>Atlas Legal Group · due tomorrow</span></div><time>1h</time></Link>
-          <Link className="activity-item" href="/onboarding" onClick={() => setNotificationsOpen(false)}><span className="activity-icon"><MessageSquareWarning size={15} /></span><div><strong>Our-side onboarding delay</strong><span>Oak & Ember needs review</span></div><time>3h</time></Link>
+          {activities.slice(0, 3).map((item) => {
+            const href = item.kind === "Invoice" ? "/invoices" : item.kind === "Report" ? "/reports" : item.kind === "Complaint" ? "/complaints" : "/clients";
+            const Icon = item.kind === "Invoice" ? CreditCard : item.kind === "Report" ? FileText : item.kind === "Complaint" ? MessageSquareWarning : Users;
+            return <Link key={item.id} className="activity-item" href={href} onClick={() => setNotificationsOpen(false)}><span className="activity-icon"><Icon size={15} /></span><div><strong>{item.kind}</strong><span>{item.client} · {item.detail}</span></div><time>{item.date}</time></Link>;
+          })}
+          {!activities.length && <div className="state-card" style={{ minHeight: 120 }}><strong>No notifications</strong><p>No recent activity found for your role.</p></div>}
         </div>
       </Modal>
 
-      <Modal open={userOpen} onClose={() => setUserOpen(false)} title={currentUser?.name || "Asad Sheikh"} description={`${currentUser ? roleLabel(currentUser.role) : "Director"} · The Fine Dudes`}>
+      <Modal open={userOpen} onClose={() => setUserOpen(false)} title={currentUser?.name || "User"} description={`${currentUser ? roleLabel(currentUser.role) : "Workspace"} · ${workspaceName}`}>
         <div className="nav-list">
           <Link className="nav-item" href="/settings" onClick={() => setUserOpen(false)}><Settings size={17} /><span>Account settings</span></Link>
           <Link className="nav-item" href="/settings?tab=team" onClick={() => setUserOpen(false)}><Users size={17} /><span>Team and roles</span></Link>
@@ -213,9 +263,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </Modal>
 
-      <Modal open={workspaceOpen} onClose={() => setWorkspaceOpen(false)} title="Workspace" description="The Fine Dudes customer-success operation.">
+      <Modal open={workspaceOpen} onClose={() => setWorkspaceOpen(false)} title="Workspace" description={`${workspaceName} customer-success operation.`}>
         <div className="activity-list">
-          <div className="activity-item"><span className="avatar avatar-violet">TF</span><div><strong>The Fine Dudes</strong><span>Current workspace · {currentUser ? roleLabel(currentUser.role) : "Director"} access</span></div><Check size={17} color="var(--green)" /></div>
+          <div className="activity-item"><span className="avatar avatar-violet">{workspaceName.slice(0, 2).toUpperCase()}</span><div><strong>{workspaceName}</strong><span>Current workspace · {currentUser ? roleLabel(currentUser.role) : "Workspace"} access</span></div><Check size={17} color="var(--green)" /></div>
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
           <Link className="button secondary" href="/settings" onClick={() => setWorkspaceOpen(false)}>Workspace settings</Link>

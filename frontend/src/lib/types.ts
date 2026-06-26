@@ -9,7 +9,11 @@ export interface Client {
   phone: string;
   mobile?: string;
   businessAddress?: string;
+  niche: string;
   handler: string;
+  handlerId?: string;
+  handlerRole?: string;
+  handlerManagerId?: string;
   stage: Stage;
   mrr: number;
   workStart: string;
@@ -31,8 +35,10 @@ export interface Invoice {
 export interface ClientContact {
   id: string;
   date: string;
-  channel: "Phone" | "Email" | "WhatsApp" | "Video meeting";
+  contactType: "Complaint" | "Report" | "Upsell" | "Simple contact";
+  channel: "Phone" | "Email" | "WhatsApp" | "Video";
   notes: string;
+  nextReachBack: string;
   owner: string;
 }
 
@@ -69,6 +75,8 @@ export interface OnboardingRecord {
   calledSameDay: boolean;
   welcomeSameDay: boolean;
   accessReceived: boolean;
+  accessItems: { label: string; required: boolean; received: boolean }[];
+  productionGoAhead?: string;
   delaySide: "Our" | "Client" | "N/A";
   delayReason?: string;
   highAlertSent: boolean;

@@ -56,7 +56,7 @@ async function commit(plan: MigrationPlan) {
     const client = await Client.findOneAndUpdate(
       { businessName: source.businessName },
       { $setOnInsert: {
-        businessName: source.businessName, customerName: source.customerName, contactNumber: source.contactNumber,
+        businessName: source.businessName, niche: source.niche, customerName: source.customerName, contactNumber: source.contactNumber,
         email: source.email, address: source.address, state: source.state, country: source.country,
         closer: closer?._id, cstHandler: cstHandler?._id, saleDate: source.saleDate,
         workStartDate: source.workStartDate, lifecycleStage: source.lifecycleStage, dateChurned: source.dateChurned
@@ -66,7 +66,7 @@ async function commit(plan: MigrationPlan) {
     for (const line of source.services) {
       const service = await Service.findOne({ name: line.name });
       if (!service) throw new Error(`Missing seeded service ${line.name}`);
-      await ClientService.updateOne({ client:client._id, service:service._id }, { $setOnInsert:{ client:client._id, service:service._id, monthlyAmount:line.monthlyAmount, active:true } }, { upsert:true });
+      await ClientService.updateOne({ client:client._id, service:service._id }, { $setOnInsert:{ client:client._id, service:service._id, monthlyAmount:line.monthlyAmount, billingType:'Recurring', active:true } }, { upsert:true });
     }
     for (const invoice of source.invoices) {
       const year = Number(invoice.billingMonth.slice(0,4)), month = Number(invoice.billingMonth.slice(5,7)) - 1;

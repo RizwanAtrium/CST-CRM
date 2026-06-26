@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "CST CRM · The Fine Dudes",
+  title: "CST CRM",
   description: "Customer success operations and revenue intelligence",
 };
 

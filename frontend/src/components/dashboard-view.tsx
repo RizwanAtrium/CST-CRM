@@ -85,7 +85,7 @@ export function DashboardView({ data, activity, initialFrom, initialTo }: Dashbo
   return <>
     <PageHeader
       eyebrow={`${currentUser ? roleLabel(currentUser.role) : "CRM"} overview`}
-      title={`Good morning, ${currentUser?.name.split(" ")[0] ?? "Asad"}`}
+      title={`Good morning, ${currentUser?.name.split(" ")[0] ?? "there"}`}
       description="Here’s what’s happening across your customer success operation."
       action={<Button onClick={() => setDateOpen(true)}><CalendarDays size={16} />{formatDateRange(appliedFrom, appliedTo)}</Button>}
       secondary={<Button variant="secondary" onClick={exportDashboard}><Download size={15} />Export report</Button>}
@@ -110,7 +110,7 @@ export function DashboardView({ data, activity, initialFrom, initialTo }: Dashbo
       </article>
       <article className="panel">
         <div className="panel-head"><div><h2>CST Performance</h2><p>Weighted score · selected period</p></div><Link href="/analytics"><Badge tone="violet">{data.metrics[3]?.change ?? "Review"}</Badge></Link></div>
-        <div className="score-ring"><div><strong>86.4</strong><span>out of 100</span></div></div>
+        <div className="score-ring"><div><strong>{data.metrics[3]?.value ?? "0"}</strong><span>out of 100</span></div></div>
         <div className="score-list">{data.score.map((item) => <div className="score-row" key={item.label}><span>{item.label} · {item.weight}%</span><strong>{item.value}%</strong><div className="progress"><i style={{ width: `${item.value}%` }} /></div></div>)}</div>
       </article>
     </section>
@@ -118,9 +118,11 @@ export function DashboardView({ data, activity, initialFrom, initialTo }: Dashbo
       <article className="panel">
         <div className="panel-head"><div><h2>Action center</h2><p>Items that need attention this week</p></div><Link className="button ghost" href="/invoices?status=Late">View all</Link></div>
         <div className="table-wrap"><table className="data-table"><thead><tr><th>Priority</th><th>Task</th><th>Client</th><th>Due</th><th>Status</th></tr></thead><tbody>
-          <tr><td><Badge tone="danger">High</Badge></td><td><Link href="/invoices?status=Late"><strong>Invoice overdue</strong></Link></td><td>Kindred Home Care</td><td>Jun 8</td><td><Badge tone="danger">12 days late</Badge></td></tr>
-          <tr><td><Badge tone="warning">Medium</Badge></td><td><Link href="/reports?status=Pending"><strong>Retention Report 2</strong></Link></td><td>Atlas Legal Group</td><td>Jun 21</td><td><Badge tone="warning">Due tomorrow</Badge></td></tr>
-          <tr><td><Badge tone="info">Normal</Badge></td><td><Link href="/contacts"><strong>Third weekly contact</strong></Link></td><td>Hearthstone Realty</td><td>Jun 20</td><td><Badge tone="info">2 of 3</Badge></td></tr>
+          {activity.length ? activity.slice(0, 5).map((item) => {
+            const href = item.kind === "Complaint" ? "/complaints" : item.kind === "Report" ? "/reports" : item.kind === "Upsell" ? "/upsells" : item.kind === "Invoice" ? "/invoices" : "/contacts";
+            const urgent = item.status === "Late" || item.status === "In Progress";
+            return <tr key={item.id}><td><Badge tone={urgent ? "danger" : "info"}>{urgent ? "High" : "Normal"}</Badge></td><td><Link href={href}><strong>{item.detail}</strong></Link></td><td>{item.client}</td><td>{item.date}</td><td><Badge tone={urgent ? "warning" : "success"}>{item.status}</Badge></td></tr>;
+          }) : <tr><td colSpan={5}>No action items found for your role.</td></tr>}
         </tbody></table></div>
       </article>
       <article className="panel">

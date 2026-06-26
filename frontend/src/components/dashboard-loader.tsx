@@ -18,12 +18,14 @@ export function DashboardLoader({ initialData, initialActivity, initialFrom, ini
 
   useEffect(() => {
     const controller = new AbortController();
-    Promise.all([crmApi.dashboard(), crmApi.activities()])
-      .then(([nextData, nextActivity]) => {
-        if (!controller.signal.aborted) {
-          setData(nextData);
-          setActivity(nextActivity);
-        }
+    crmApi.dashboard()
+      .then((nextData) => {
+        if (!controller.signal.aborted) setData(nextData);
+      })
+      .catch(() => undefined);
+    crmApi.activities()
+      .then((nextActivity) => {
+        if (!controller.signal.aborted) setActivity(nextActivity);
       })
       .catch(() => undefined);
     return () => controller.abort();

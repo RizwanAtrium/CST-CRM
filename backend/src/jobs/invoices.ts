@@ -8,11 +8,19 @@ import { trackedJob } from './run-job.js';
 export async function generateInvoices(now = new Date(), force = false) {
   const runKey = force ? `force-${now.toISOString()}` : now.toISOString().slice(0, 10);
   return trackedJob('invoices', runKey, async () => {
-    const clients = await Client.find({ lifecycleStage: 'Active' }).lean();
+    const clients = await Client.find({ lifecycleStage: 'Active', workStartDate: { $ne: null } }).lean();
     let created = 0, skipped = 0;
     for (const client of clients) {
-      const totals = await ClientService.aggregate([{ $match: { client: client._id, active: true } }, { $group: { _id: null, amount: { $sum: '$monthlyAmount' } } }]);
+      if (!client.workStartDate) {
+        skipped++;
+        continue;
+      }
+      const totals = await ClientService.aggregate([{ $match: { client: client._id, active: true, billingType: 'Recurring' } }, { $group: { _id: null, amount: { $sum: '$monthlyAmount' } } }]);
       const amount = totals[0]?.amount ?? 0;
+      if (amount <= 0) {
+        skipped++;
+        continue;
+      }
       const dueDates = force
         ? [billingDate(client.workStartDate, now.getFullYear(), now.getMonth())]
         : invoiceDueCandidates(client.workStartDate, now, 5);

@@ -3,6 +3,7 @@ export type RawRow = Record<string, CellValue>;
 
 export interface ClientColumnMap {
   businessName: string;
+  niche: string;
   customerName?: string;
   contactNumber?: string;
   email?: string;
@@ -53,6 +54,7 @@ export interface MigrationConfig {
 export interface NormalizedClient {
   sourceRow: number;
   businessName: string;
+  niche: string;
   customerName?: string;
   contactNumber?: string;
   email?: string;

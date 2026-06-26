@@ -11,15 +11,15 @@ import { canCreateRole, canManageMember } from '../services/team-policy.js';
 
 export const usersRouter = Router();
 const objectId = z.string().regex(/^[0-9a-f]{24}$/i);
-const role = z.enum(['DIRECTOR', 'CST_MANAGER', 'CST_HANDLER', 'CST']);
+const role = z.enum(['SUPER_ADMIN', 'DIRECTOR', 'CST_MANAGER', 'CST_HANDLER', 'CST']);
 const password = z.string().min(8).max(128)
   .regex(/[a-z]/, 'Password requires a lowercase letter')
   .regex(/[A-Z]/, 'Password requires an uppercase letter')
   .regex(/[0-9]/, 'Password requires a number');
 
-usersRouter.use(allowRoles('DIRECTOR', 'CST_MANAGER'));
+usersRouter.use(allowRoles('SUPER_ADMIN', 'DIRECTOR', 'CST_MANAGER'));
 usersRouter.get('/', asyncHandler(async (req, res) => {
-  const filter = req.user?.role === 'DIRECTOR' ? {} : { $or: [{ _id: req.user?._id }, { manager: req.user?._id, role: 'CST_HANDLER' }] };
+  const filter = ['SUPER_ADMIN', 'DIRECTOR'].includes(req.user?.role ?? '') ? {} : { $or: [{ _id: req.user?._id }, { manager: req.user?._id, role: { $in: ['CST_HANDLER', 'CST'] } }] };
   res.json({ success: true, data: await User.find(filter).populate('manager', 'name email role').sort({ name: 1 }) });
 }));
 usersRouter.post('/', validate(z.object({
@@ -29,7 +29,7 @@ usersRouter.post('/', validate(z.object({
   role: role.default('CST_HANDLER'),
   manager: objectId.optional()
 }).strict()), asyncHandler(async (req, res) => {
-  const isDirector = req.user?.role === 'DIRECTOR';
+  const isDirector = ['SUPER_ADMIN', 'DIRECTOR'].includes(req.user?.role ?? '');
   if (!req.user || !canCreateRole(req.user, req.body.role)) throw new AppError(403, 'CST Managers may only create CST Handlers');
 
   let manager: unknown = null;
@@ -54,7 +54,7 @@ usersRouter.post('/', validate(z.object({
 usersRouter.get('/:id',validate(z.object({id:objectId}).strict(),'params'),asyncHandler(async(req,res)=>{
   const user=await User.findById(String(req.params.id));
   if(!user)throw new AppError(404,'User not found');
-  if (req.user?.role !== 'DIRECTOR' && String(user._id) !== String(req.user?._id) && String(user.manager) !== String(req.user?._id)) throw new AppError(403, 'Forbidden');
+  if (!['SUPER_ADMIN', 'DIRECTOR'].includes(req.user?.role ?? '') && String(user._id) !== String(req.user?._id) && String(user.manager) !== String(req.user?._id)) throw new AppError(403, 'Forbidden');
   await user.populate('manager', 'name email role');
   res.json({success:true,data:user});
 }));
@@ -68,7 +68,7 @@ usersRouter.patch('/:id', validate(z.object({id:objectId}).strict(),'params'), v
 }).strict()), asyncHandler(async (req, res) => {
   const existing = await User.findById(req.params.id);
   if (!existing) throw new AppError(404, 'User not found');
-  const isDirector = req.user?.role === 'DIRECTOR';
+  const isDirector = ['SUPER_ADMIN', 'DIRECTOR'].includes(req.user?.role ?? '');
   if (!req.user || !canManageMember(req.user, existing)) throw new AppError(403, 'CST Managers may only manage their own Handlers');
   if (!isDirector && ('role' in req.body || 'manager' in req.body)) throw new AppError(403, 'CST Managers cannot change Handler ownership or role');
   if (String(existing._id) === String(req.user?._id) && req.body.active === false) throw new AppError(422, 'You cannot disable your own account');

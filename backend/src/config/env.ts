@@ -8,7 +8,7 @@ const schema = z.object({
   JWT_SECRET: z.string().min(32).default('development-only-secret-change-me-now'),
   JWT_EXPIRES_IN: z.string().default('7d'),
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
-  APP_TIMEZONE: z.string().default('Asia/Karachi'),
+  APP_TIMEZONE: z.string().default('America/New_York'),
   CRON_ENABLED: z.string().default('true').transform((v) => v === 'true'),
   CRON_SECRET: z.string().min(16).default('development-cron-secret'),
   SALES_CRM_INTEGRATION_SECRET: z.string().min(24).default('development-sales-integration-key'),
