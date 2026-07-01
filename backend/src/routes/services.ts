@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { PipelineStage } from 'mongoose';
 import { z } from 'zod';
 import { validate } from '../middleware/validate.js';
 import { Service } from '../models/Service.js';
@@ -28,7 +29,7 @@ servicesRouter.get('/', asyncHandler(async (_req, res) => res.json({ success: tr
 servicesRouter.post('/', validate(z.object({ name: z.string().trim().min(1), active: z.boolean().default(true) }).strict()), asyncHandler(async (req, res) => { const row=await Service.create(req.body); await audit({actor:req.user?._id,action:'CREATE',recordType:'Service',recordId:row._id,after:row.toObject()}); res.status(201).json({ success: true, data: row }); }));
 servicesRouter.get('/usage', asyncHandler(async (req, res) => {
   const visible = await visibleClientIds(req.user);
-  const pipeline: Record<string, unknown>[] = [
+  const pipeline: PipelineStage[] = [
     { $match: { active: true } },
     { $lookup: { from: 'clients', localField: 'client', foreignField: '_id', as: 'client' } },
     { $unwind: '$client' }
