@@ -10,7 +10,7 @@ describe('computed business rules',()=>{
     expect(range.start).toEqual(new Date('2026-06-15T04:00:00.000Z'));
     expect(range.end).toEqual(new Date('2026-06-22T04:00:00.000Z'));
   });
-  it('classifies invoice timing',()=>{const due=new Date('2026-06-20T04:00:00.000Z');expect(invoiceTiming(due,new Date('2026-06-15T04:00:00.000Z'))).toBe('Early');expect(invoiceTiming(due,new Date('2026-06-19T04:00:00.000Z'))).toBe('On Time');expect(invoiceTiming(due,new Date('2026-06-20T04:00:00.000Z'))).toBe('Late');expect(daysBeforeDue(due,new Date('2026-06-15T04:00:00.000Z'))).toBe(5);});
+  it('classifies invoice timing',()=>{const due=new Date('2026-06-20T04:00:00.000Z');expect(invoiceTiming(due,new Date('2026-06-15T04:00:00.000Z'))).toBe('Early');expect(invoiceTiming(due,new Date('2026-06-19T04:00:00.000Z'))).toBe('On Time');expect(invoiceTiming(due,new Date('2026-06-20T04:00:00.000Z'))).toBe('On Time');expect(invoiceTiming(due,new Date('2026-06-21T04:00:00.000Z'))).toBe('Late');expect(daysBeforeDue(due,new Date('2026-06-15T04:00:00.000Z'))).toBe(5);});
   it('makes the next invoice available five days before its due date',()=>{
     const dates=invoiceDueCandidates(new Date('2026-01-01T05:00:00.000Z'),new Date('2026-06-27T16:00:00.000Z'));
     expect(dates.map(businessDateKey)).toEqual(['2026-06-01','2026-07-01']);

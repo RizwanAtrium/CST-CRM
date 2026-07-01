@@ -108,7 +108,7 @@ export function invoiceTiming(dueDate: Date, sentDate?: Date | null, now = new D
   if (!sentDate) return startOfBusinessDay(now) > startOfBusinessDay(dueDate) ? 'Late' : 'Not Sent';
   const days = Math.floor((startOfBusinessDay(dueDate).getTime() - startOfBusinessDay(sentDate).getTime()) / 86400000);
   if (days >= 5) return 'Early';
-  if (days >= 1) return 'On Time';
+  if (days >= 0) return 'On Time';
   return 'Late';
 }
 

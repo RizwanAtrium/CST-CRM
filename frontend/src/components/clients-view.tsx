@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Download, Ellipsis, Filter } from "lucide-react";
-import { crmApi } from "@/lib/api";
+import { crmApi, onCrmDataChanged } from "@/lib/api";
 import type { Client, Stage } from "@/lib/types";
 import { AddButton, Avatar, Badge, Button, Field, Modal, PageHeader, SearchField } from "./ui";
 
@@ -30,6 +30,7 @@ export function ClientsView({ initialQuery = "", initialStage = "All" }: { initi
   }, []);
 
   useEffect(() => { void Promise.resolve().then(fetchClients); }, [fetchClients]);
+  useEffect(() => onCrmDataChanged(fetchClients), [fetchClients]);
 
   const handlers = useMemo(() => Array.from(new Set(clients.map((client) => client.handler))).sort(), [clients]);
   const services = useMemo(() => Array.from(new Set(clients.flatMap((client) => client.services))).sort(), [clients]);

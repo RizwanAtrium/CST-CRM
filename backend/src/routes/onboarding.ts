@@ -10,7 +10,8 @@ import { asyncHandler } from '../utils/async-handler.js';
 import { AppError } from '../utils/errors.js';
 
 const accessItem = z.object({ label: z.string().trim().min(1), required: z.boolean().default(true), received: z.boolean().default(false), notes: z.string().trim().optional() }).strict();
-const schema = z.object({ calledSameDay: z.boolean().optional(), welcomeMsgSameDay: z.boolean().optional(), accessReceived: z.boolean().optional(), accessItems: z.array(accessItem).max(100).optional(), productionGoAheadAt: z.coerce.date().nullable().optional(), delaySide: z.enum(['Our','Client','N/A']).optional(), delayReason: z.string().trim().optional(), onboardStatus: z.enum(['Not Started','In Progress','Completed','Delayed']).optional() }).strict();
+const onboardStatus = z.enum(['Not Started','In Progress','Ready for review','Graduating this week','Completed','Delayed']);
+const schema = z.object({ calledSameDay: z.boolean().optional(), welcomeMsgSameDay: z.boolean().optional(), accessReceived: z.boolean().optional(), accessItems: z.array(accessItem).max(100).optional(), productionGoAheadAt: z.coerce.date().nullable().optional(), delaySide: z.enum(['Our','Client','N/A']).optional(), delayReason: z.string().trim().optional(), onboardStatus: onboardStatus.optional() }).strict();
 const objectId = z.string().regex(/^[0-9a-f]{24}$/i);
 export const onboardingRouter = Router();
 async function applyOnboardingVisibility(filter: Record<string, unknown>, user: UserDocument | undefined, requestedClient?: string) {
@@ -23,7 +24,7 @@ async function applyOnboardingVisibility(filter: Record<string, unknown>, user: 
   return filter;
 }
 
-onboardingRouter.get('/', validate(z.object({ client: objectId.optional(), status: z.enum(['Not Started','In Progress','Completed','Delayed']).optional() }).strict(), 'query'), asyncHandler(async (req,res) => {
+onboardingRouter.get('/', validate(z.object({ client: objectId.optional(), status: onboardStatus.optional() }).strict(), 'query'), asyncHandler(async (req,res) => {
   const filter: Record<string, unknown> = {};
   if (req.query.status) filter.onboardStatus = req.query.status;
   await applyOnboardingVisibility(filter, req.user, req.query.client ? String(req.query.client) : undefined);

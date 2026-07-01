@@ -23,7 +23,14 @@ import { chatRouter } from './routes/chat.js';
 
 export const app = express();
 app.use(helmet());
-app.use(cors({ origin: env.CORS_ORIGIN.split(',').map((x) => x.trim()), credentials: true }));
+const configuredOrigins = env.CORS_ORIGIN.split(',').map((x) => x.trim()).filter(Boolean);
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || configuredOrigins.includes(origin) || /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true
+}));
 app.use(express.json({ limit: '1mb' }));
 app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.get('/api/health', (_req, res) => res.json({ success: true, data: { status: 'ok', database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected', timestamp: new Date().toISOString() } }));

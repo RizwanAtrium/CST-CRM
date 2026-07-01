@@ -5,7 +5,7 @@ import {
   ArrowRightLeft, Bell, Building2, Check, Database, Ellipsis, Eye, EyeOff, History, KeyRound,
   LockKeyhole, Play, ShieldCheck, UserCog, UserPlus, Users,
 } from "lucide-react";
-import { crmApi, type ApiAssignmentClient, type ApiJobRun, type ApiTeamUser, type ApiWorkspaceSettings } from "@/lib/api";
+import { crmApi, onCrmDataChanged, type ApiAssignmentClient, type ApiJobRun, type ApiTeamUser, type ApiWorkspaceSettings } from "@/lib/api";
 import { getSession, type UserRole } from "@/lib/auth";
 import { Avatar, Badge, Button, Field, Modal, PageHeader } from "./ui";
 
@@ -76,6 +76,7 @@ export function SettingsView({ initialTab = "Workspace" }: { initialTab?: string
   const [transferring, setTransferring] = useState(false);
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [sessionRole, setSessionRole] = useState<UserRole | null>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   const isDirector = sessionRole === "SUPER_ADMIN" || sessionRole === "DIRECTOR";
   const isManager = sessionRole === "CST_MANAGER";
@@ -87,6 +88,7 @@ export function SettingsView({ initialTab = "Workspace" }: { initialTab?: string
     const timer = window.setTimeout(() => setSessionRole(getSession()?.user.role ?? "CST_HANDLER"), 0);
     return () => window.clearTimeout(timer);
   }, []);
+  useEffect(() => onCrmDataChanged(() => setRefreshTick((value) => value + 1)), []);
 
   useEffect(() => {
     if (sessionRole === null) return;
@@ -119,7 +121,7 @@ export function SettingsView({ initialTab = "Workspace" }: { initialTab?: string
       }
     }, 0);
     return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [canManageHandlers, isDirector, sessionRole]);
+  }, [canManageHandlers, isDirector, refreshTick, sessionRole]);
 
   const update = <K extends keyof WorkspaceSettings>(key: K, value: WorkspaceSettings[K]) => { setSaved(false); setSettings((current) => ({ ...current, [key]: value })); };
   const saveSettings = async () => { setSettings(await crmApi.updateWorkspaceSettings(settings)); setSaved(true); };

@@ -26,6 +26,35 @@ async function ensureVisibleClient(clientId: string, user: UserDocument | undefi
 export const servicesRouter = Router();
 servicesRouter.get('/', asyncHandler(async (_req, res) => res.json({ success: true, data: await Service.find().sort({ name: 1 }) })));
 servicesRouter.post('/', validate(z.object({ name: z.string().trim().min(1), active: z.boolean().default(true) }).strict()), asyncHandler(async (req, res) => { const row=await Service.create(req.body); await audit({actor:req.user?._id,action:'CREATE',recordType:'Service',recordId:row._id,after:row.toObject()}); res.status(201).json({ success: true, data: row }); }));
+servicesRouter.get('/usage', asyncHandler(async (req, res) => {
+  const visible = await visibleClientIds(req.user);
+  const pipeline: Record<string, unknown>[] = [
+    { $match: { active: true } },
+    { $lookup: { from: 'clients', localField: 'client', foreignField: '_id', as: 'client' } },
+    { $unwind: '$client' }
+  ];
+  if (visible !== null) pipeline.push({ $match: { 'client._id': { $in: visible } } });
+  pipeline.push(
+    { $group: {
+      _id: { service: '$service', lifecycleStage: '$client.lifecycleStage', niche: '$client.niche' },
+      count: { $sum: 1 },
+      revenue: { $sum: '$monthlyAmount' }
+    } },
+    { $group: {
+      _id: '$_id.service',
+      totalClients: { $sum: '$count' },
+      revenue: { $sum: '$revenue' },
+      rows: { $push: { lifecycleStage: '$_id.lifecycleStage', niche: '$_id.niche', count: '$count', revenue: '$revenue' } }
+    } }
+  );
+  const rows = await ClientService.aggregate(pipeline);
+  res.json({ success: true, data: rows.map((row) => ({
+    service: String(row._id),
+    totalClients: row.totalClients,
+    revenue: row.revenue,
+    rows: row.rows
+  })) });
+}));
 servicesRouter.get('/:id', validate(idParams,'params'), asyncHandler(async (req,res)=>{const row=await Service.findById(String(req.params.id));if(!row)throw new AppError(404,'Service not found');res.json({success:true,data:row});}));
 servicesRouter.patch('/:id', validate(idParams,'params'), validate(z.object({ name: z.string().trim().min(1).optional(), active: z.boolean().optional() }).strict()), asyncHandler(async (req, res) => { const row=await Service.findById(String(req.params.id)); if (!row) throw new AppError(404, 'Service not found'); const before=row.toObject();Object.assign(row,req.body);await row.save();await audit({actor:req.user?._id,action:'UPDATE',recordType:'Service',recordId:row._id,before,after:row.toObject()});res.json({ success: true, data: row }); }));
 

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, CalendarDays, Download, Filter, TrendingUp, Users } from "lucide-react";
-import { crmApi } from "@/lib/api";
+import { crmApi, onCrmDataChanged } from "@/lib/api";
 import type { Client, DashboardData, Stage } from "@/lib/types";
 import { Badge, Button, Field, Modal, PageHeader, SearchField } from "./ui";
 
@@ -42,13 +42,15 @@ export function AnalyticsView() {
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([crmApi.dashboard(), crmApi.clients()]).then(([dashboard, clientRows]) => {
+    const refresh = () => Promise.all([crmApi.dashboard(), crmApi.clients()]).then(([dashboard, clientRows]) => {
       if (!cancelled) {
         setData(dashboard);
         setClients(clientRows);
       }
     });
-    return () => { cancelled = true; };
+    void refresh();
+    const cleanup = onCrmDataChanged(() => { void refresh(); });
+    return () => { cancelled = true; cleanup(); };
   }, []);
 
   const filteredClients = useMemo(() => clients.filter((client) => {

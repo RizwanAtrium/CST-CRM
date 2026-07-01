@@ -8,7 +8,7 @@ import {
   BriefcaseBusiness, CreditCard, FileText, HandCoins, LayoutDashboard, LifeBuoy, LogOut, Menu,
   MessageSquare, MessageSquareWarning, Moon, Search, Settings, Sun, Users, X,
 } from "lucide-react";
-import { crmApi } from "@/lib/api";
+import { crmApi, onCrmDataChanged } from "@/lib/api";
 import { clearSession, getSession, roleLabel, SESSION_EVENT, type AuthUser } from "@/lib/auth";
 import type { ActivityRecord, Client, Invoice } from "@/lib/types";
 import { Button, Modal } from "./ui";
@@ -77,7 +77,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!currentUser) return;
     let cancelled = false;
-    void Promise.all([
+    const refresh = () => Promise.all([
       crmApi.workspaceSettings(),
       crmApi.clients(),
       crmApi.invoices(),
@@ -95,7 +95,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setActivities([]);
       }
     });
-    return () => { cancelled = true; };
+    void refresh();
+    const cleanup = onCrmDataChanged(() => { void refresh(); });
+    return () => { cancelled = true; cleanup(); };
   }, [currentUser]);
 
   useEffect(() => {

@@ -67,14 +67,14 @@ invoicesRouter.get('/', validate(listQuery, 'query'), asyncHandler(async (req, r
   if (req.query.paid !== undefined) filter.paid = req.query.paid === 'true';
   if (req.query.status === 'Sent') {
     filter.sentDate = { $ne: null };
-    filter.$expr = { $lt: ['$sentDate', '$dueDate'] };
+    filter.$expr = { $lte: ['$sentDate', '$dueDate'] };
   } else if (req.query.status === 'Not Sent') {
     filter.sentDate = null;
     filter.dueDate = { $gte: startOfBusinessDay(new Date()) };
   } else if (req.query.status === 'Late') {
     filter.$or = [
       { sentDate: null, dueDate: { $lt: startOfBusinessDay(new Date()) } },
-      { sentDate: { $ne: null }, $expr: { $gte: ['$sentDate', '$dueDate'] } }
+      { sentDate: { $ne: null }, $expr: { $gt: ['$sentDate', '$dueDate'] } }
     ];
   }
   if (req.query.from || req.query.to) {

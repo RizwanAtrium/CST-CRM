@@ -77,6 +77,10 @@ async function applyUpsellMrr(row: InstanceType<typeof Upsell>) {
   row.mrrApplied = true;
   await row.save();
 }
+function reportStatus(dueDate: Date, dateSent?: Date | null) {
+  if (dateSent) return dateSent > dueDate ? 'Late' : 'Sent';
+  return new Date() > dueDate ? 'Late' : 'Pending';
+}
 
 export const contactsRouter=Router();
 contactsRouter.get('/',validate(listQuery,'query'),list(Contact));
@@ -94,9 +98,9 @@ complaintsRouter.delete('/:id',validate(idParams,'params'),remove(Complaint,'Com
 
 export const reportsRouter=Router();
 reportsRouter.get('/',validate(listQuery,'query'),list(Report));
-reportsRouter.post('/',validate(z.object({client:objectId,category:z.enum(['Retention','Onboarding']),label:z.string().trim().min(1),periodMonth:z.string().regex(/^\d{4}-\d{2}$/),dueDate:z.coerce.date(),notes:z.string().trim().optional()}).strict()),asyncHandler(async(req,res)=>{await ensureClient(req.body.client,req.user);const row=await Report.create({...req.body,status:new Date()>req.body.dueDate?'Late':'Pending'});await audit({actor:req.user?._id,action:'CREATE',recordType:'Report',recordId:row._id,after:row.toObject()});if(row.status!=='Sent')await audit({actor:req.user?._id,action:'IN_APP_NOTIFICATION_REPORT_NOT_SENT',recordType:'Report',recordId:row._id,source:'SYSTEM',after:{client:row.client,label:row.label,status:row.status}});res.status(201).json({success:true,data:row});}));
+reportsRouter.post('/',validate(z.object({client:objectId,category:z.enum(['Retention','Onboarding']),label:z.string().trim().min(1),periodMonth:z.string().regex(/^\d{4}-\d{2}$/),dueDate:z.coerce.date(),dateSent:z.coerce.date().nullable().optional(),notes:z.string().trim().optional()}).strict()),asyncHandler(async(req,res)=>{await ensureClient(req.body.client,req.user);const row=await Report.create({...req.body,status:reportStatus(req.body.dueDate,req.body.dateSent)});await audit({actor:req.user?._id,action:'CREATE',recordType:'Report',recordId:row._id,after:row.toObject()});if(row.status!=='Sent')await audit({actor:req.user?._id,action:'IN_APP_NOTIFICATION_REPORT_NOT_SENT',recordType:'Report',recordId:row._id,source:'SYSTEM',after:{client:row.client,label:row.label,status:row.status,dueDate:row.dueDate,dateSent:row.dateSent}});res.status(201).json({success:true,data:row});}));
 reportsRouter.get('/:id',validate(idParams,'params'),detail(Report,'Report'));
-reportsRouter.patch('/:id',validate(idParams,'params'),validate(z.object({category:z.enum(['Retention','Onboarding']).optional(),label:z.string().trim().min(1).optional(),periodMonth:z.string().regex(/^\d{4}-\d{2}$/).optional(),dueDate:z.coerce.date().optional(),dateSent:z.coerce.date().nullable().optional(),notes:z.string().trim().optional()}).strict()),asyncHandler(async(req,res)=>{const row=await findScopedRecord(Report,String(req.params.id),req.user,'Report');const before=row.toObject();Object.assign(row,req.body);row.status=row.dateSent?'Sent':new Date()>row.dueDate?'Late':'Pending';await row.save();await audit({actor:req.user?._id,action:'UPDATE',recordType:'Report',recordId:row._id,before,after:row.toObject()});if(row.status!=='Sent')await audit({actor:req.user?._id,action:'IN_APP_NOTIFICATION_REPORT_NOT_SENT',recordType:'Report',recordId:row._id,source:'SYSTEM',after:{client:row.client,label:row.label,status:row.status}});res.json({success:true,data:row});}));
+reportsRouter.patch('/:id',validate(idParams,'params'),validate(z.object({category:z.enum(['Retention','Onboarding']).optional(),label:z.string().trim().min(1).optional(),periodMonth:z.string().regex(/^\d{4}-\d{2}$/).optional(),dueDate:z.coerce.date().optional(),dateSent:z.coerce.date().nullable().optional(),notes:z.string().trim().optional()}).strict()),asyncHandler(async(req,res)=>{const row=await findScopedRecord(Report,String(req.params.id),req.user,'Report');const before=row.toObject();Object.assign(row,req.body);row.status=reportStatus(row.dueDate,row.dateSent);await row.save();await audit({actor:req.user?._id,action:'UPDATE',recordType:'Report',recordId:row._id,before,after:row.toObject()});if(row.status!=='Sent')await audit({actor:req.user?._id,action:'IN_APP_NOTIFICATION_REPORT_NOT_SENT',recordType:'Report',recordId:row._id,source:'SYSTEM',after:{client:row.client,label:row.label,status:row.status,dueDate:row.dueDate,dateSent:row.dateSent}});res.json({success:true,data:row});}));
 reportsRouter.delete('/:id',validate(idParams,'params'),remove(Report,'Report'));
 
 export const upsellsRouter=Router();

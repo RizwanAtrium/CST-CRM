@@ -90,6 +90,19 @@ export type ApiAuditEntry = {
 };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+export const CRM_DATA_CHANGED_EVENT = "crm:data-changed";
+
+export function onCrmDataChanged(listener: () => void) {
+  if (typeof window === "undefined") return () => undefined;
+  window.addEventListener(CRM_DATA_CHANGED_EVENT, listener);
+  return () => window.removeEventListener(CRM_DATA_CHANGED_EVENT, listener);
+}
+
+function emitCrmDataChanged(method?: string) {
+  if (typeof window === "undefined") return;
+  if (!method || method.toUpperCase() === "GET") return;
+  window.dispatchEvent(new CustomEvent(CRM_DATA_CHANGED_EVENT));
+}
 
 export type BackendDashboard = {
   clients: { active: number; total: number; inProgress: number };
@@ -142,6 +155,13 @@ export type BackendService = {
   _id: string;
   name: string;
   active: boolean;
+};
+
+export type BackendServiceUsage = {
+  service: string;
+  totalClients: number;
+  revenue: number;
+  rows: Array<{ lifecycleStage: string; niche: string; count: number; revenue: number }>;
 };
 
 export type BackendClientService = {
@@ -307,8 +327,11 @@ export function invoiceFromApi(item: BackendInvoice): Invoice {
     month: item.billingMonth,
     amount: item.amount,
     due: item.dueDate ? new Date(item.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "",
+    dueIso: item.dueDate ? new Date(item.dueDate).toISOString().slice(0, 10) : "",
     sent: item.sentDate ? new Date(item.sentDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : undefined,
-    status: (item.status as Invoice["status"]) ?? (item.paid ? "Paid" : "Not Sent"),
+    sentIso: item.sentDate ? new Date(item.sentDate).toISOString().slice(0, 10) : "",
+    paidDateIso: item.paidDate ? new Date(item.paidDate).toISOString().slice(0, 10) : "",
+    status: item.paid ? "Paid" : ((item.status as Invoice["status"]) ?? "Not Sent"),
     paid: item.paid,
   };
 }
@@ -388,7 +411,9 @@ async function request<T>(
     throw new ApiError(`API ${response.status}`, response.status);
   }
 
-  return parseEnvelope<T>(payload, response.status);
+  const data = parseEnvelope<T>(payload, response.status);
+  emitCrmDataChanged(init.method);
+  return data;
 }
 
 export const authApi = {
@@ -415,9 +440,11 @@ export const crmApi = {
   activities: () => request<{ id: string; client: string; kind: string; date: string; status: string; owner: string; detail: string; value?: number }[]>("/activities").then((items) => items.map(activityFromApi)),
   services: () => request<BackendService[]>("/services").then((items) => items.map((s) => s.name)),
   rawServices: () => request<BackendService[]>("/services"),
+  serviceUsage: () => request<BackendServiceUsage[]>("/services/usage"),
   createService: (payload: { name: string }) => request<BackendService>("/services", { method: "POST", body: JSON.stringify(payload) }),
   clientServices: (clientId: string) => request<BackendClientService[]>(`/clients/${clientId}/services`),
   createClientService: (clientId: string, payload: { service: string; monthlyAmount: number; billingType: "Recurring" | "One Time"; active?: boolean }) => request<BackendClientService>(`/clients/${clientId}/services`, { method: "POST", body: JSON.stringify(payload) }),
+  updateClientService: (clientId: string, id: string, payload: { monthlyAmount?: number; billingType?: "Recurring" | "One Time"; active?: boolean }) => request<BackendClientService>(`/clients/${clientId}/services/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   create: <T>(resource: string, payload: Partial<T>) => request<T>(`/${resource}`, { method: "POST", body: JSON.stringify(payload) }),
   update: <T>(resource: string, id: string, payload: Partial<T>) => request<T>(`/${resource}/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   createClient: (payload: Record<string, unknown>) => request<BackendClient>("/clients", { method: "POST", body: JSON.stringify(payload) }),

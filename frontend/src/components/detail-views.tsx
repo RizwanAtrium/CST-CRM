@@ -25,11 +25,13 @@ import {
 } from "lucide-react";
 import {
   crmApi,
+  onCrmDataChanged,
   type ApiAuditEntry,
   type ApiTeamUser,
   type BackendComplaint,
   type BackendContact,
   type BackendInvoice,
+  type BackendClientService,
   type BackendOnboarding,
   type BackendReport,
   type BackendService,
@@ -61,6 +63,7 @@ type DetailFilterRow = {
   status?: string;
   dateIso?: string;
 };
+type UpsellLine = { id: string; service: string; revenue: number };
 
 const clientTabs = ["Overview", "Services", "Invoices", "Contacts", "Reports", "Complaints", "Upsells", "History"];
 const detailStatusOptions: Record<string, string[]> = {
@@ -87,11 +90,31 @@ const monthDueDate = (periodMonth: string, day: number) => {
   const lastDay = new Date(year, month, 0).getDate();
   return `${periodMonth}-${String(Math.min(day, lastDay)).padStart(2, "0")}`;
 };
+const dayAfterIso = (value: string) => {
+  const date = new Date(value);
+  date.setDate(date.getDate() + 1);
+  return date.toISOString().slice(0, 10);
+};
+const reportSentDateForStatus = (status: string, dueDate: string, sentDate: string, fallbackDate: string) => {
+  if (status === "Pending") return null;
+  if (status === "Late") return sentDate && sentDate > dueDate ? sentDate : dayAfterIso(dueDate);
+  return sentDate && sentDate <= dueDate ? sentDate : (dueDate || fallbackDate);
+};
+const invoiceDueDateForMonth = (workStart: string | null | undefined, periodMonth: string) => {
+  const start = workStart ? new Date(workStart) : null;
+  const startDay = start && !Number.isNaN(start.getTime()) ? start.getDate() : 1;
+  return monthDueDate(periodMonth, startDay);
+};
 const prettyJson = (value: unknown) => JSON.stringify(value ?? {}, null, 2);
+const emptyUpsellLine = (): UpsellLine => ({ id: Math.random().toString(36).slice(2), service: "", revenue: 0 });
 
 const invoiceStatus = (invoice: BackendInvoice): Status => {
   if (invoice.paid) return "Paid";
   return (invoice.status as Status) ?? "Not Sent";
+};
+const serviceLineName = (line: BackendClientService) => {
+  if (typeof line.service === "string") return line.service;
+  return line.service.name;
 };
 
 const actorName = (actor: ApiAuditEntry["actor"]) => {
@@ -154,15 +177,25 @@ export function ClientDetailView({ id }: { id: string }) {
   const [editOpen, setEditOpen] = useState(false);
   const [ownerPickerOpen, setOwnerPickerOpen] = useState(false);
   const [selectedCstOwner, setSelectedCstOwner] = useState("");
+  const [clientEditError, setClientEditError] = useState("");
   const [logOpen, setLogOpen] = useState(false);
   const [addModal, setAddModal] = useState<null | "service" | "newService" | "invoice" | "contact" | "report" | "complaint" | "upsell">(null);
   const [selectedHistory, setSelectedHistory] = useState<ClientHistoryEntry | null>(null);
+  const [selectedComplaint, setSelectedComplaint] = useState<BackendComplaint | null>(null);
+  const [selectedUpsell, setSelectedUpsell] = useState<BackendUpsell | null>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<BackendInvoice | null>(null);
+  const [selectedReport, setSelectedReport] = useState<BackendReport | null>(null);
+  const [upsellLines, setUpsellLines] = useState<UpsellLine[]>(() => [emptyUpsellLine()]);
+  const [invoiceMonth, setInvoiceMonth] = useState(() => monthValue());
+  const [invoiceMode, setInvoiceMode] = useState<"same" | "adjustment" | "upsell">("same");
+  const [invoiceError, setInvoiceError] = useState("");
   const [invoices, setInvoices] = useState<BackendInvoice[]>([]);
   const [contacts, setContacts] = useState<BackendContact[]>([]);
   const [reports, setReports] = useState<BackendReport[]>([]);
   const [complaints, setComplaints] = useState<BackendComplaint[]>([]);
   const [upsells, setUpsells] = useState<BackendUpsell[]>([]);
   const [serviceCatalog, setServiceCatalog] = useState<BackendService[]>([]);
+  const [clientServiceLines, setClientServiceLines] = useState<BackendClientService[]>([]);
   const [teamUsers, setTeamUsers] = useState<ApiTeamUser[]>([]);
   const [history, setHistory] = useState<ApiAuditEntry[]>([]);
   const [detailQuery, setDetailQuery] = useState("");
@@ -183,13 +216,14 @@ export function ClientDetailView({ id }: { id: string }) {
       .then(async (clientData) => {
         setClient(clientData);
         const clientQuery = `?client=${encodeURIComponent(clientData.id)}&limit=100`;
-        const [invoiceRows, contactRows, reportRows, complaintRows, upsellRows, serviceRows, historyRows, teamRows] = await Promise.all([
+        const [invoiceRows, contactRows, reportRows, complaintRows, upsellRows, serviceRows, clientServiceRows, historyRows, teamRows] = await Promise.all([
           crmApi.rawInvoices(clientQuery),
           crmApi.contacts(clientQuery),
           crmApi.reports(clientQuery),
           crmApi.complaints(clientQuery),
           crmApi.upsells(clientQuery),
           crmApi.rawServices(),
+          crmApi.clientServices(clientData.id).catch(() => []),
           crmApi.clientHistory(clientData.id).catch(() => []),
           canAssignCstOwner ? crmApi.teamUsers().catch(() => []) : Promise.resolve([]),
         ]);
@@ -199,6 +233,7 @@ export function ClientDetailView({ id }: { id: string }) {
         setComplaints(complaintRows);
         setUpsells(upsellRows);
         setServiceCatalog(serviceRows.filter((service) => service.active));
+        setClientServiceLines(clientServiceRows);
         setHistory(historyRows);
         setTeamUsers(teamRows);
       })
@@ -210,6 +245,7 @@ export function ClientDetailView({ id }: { id: string }) {
         setComplaints([]);
         setUpsells([]);
         setServiceCatalog([]);
+        setClientServiceLines([]);
         setTeamUsers([]);
         setHistory([]);
       })
@@ -217,6 +253,7 @@ export function ClientDetailView({ id }: { id: string }) {
   }, [id, canAssignCstOwner]);
 
   useEffect(() => { void Promise.resolve().then(fetchClient); }, [fetchClient]);
+  useEffect(() => onCrmDataChanged(fetchClient), [fetchClient]);
 
   const visibleServices = useMemo(
     () => (client?.services ?? []).filter((service) => matchesDetailFilters({ text: service, status: "Active" }, detailQuery, detailStatus, detailFrom, detailTo)),
@@ -297,6 +334,7 @@ export function ClientDetailView({ id }: { id: string }) {
   function openEditClient() {
     setSelectedCstOwner(client?.handlerId ?? "");
     setOwnerPickerOpen(false);
+    setClientEditError("");
     setEditOpen(true);
   }
 
@@ -312,6 +350,7 @@ export function ClientDetailView({ id }: { id: string }) {
 
   function saveClient(formData: FormData) {
     if (!client) return;
+    setClientEditError("");
     const payload: Record<string, unknown> = {};
     const fields: Array<{ key: string; formKey: string }> = [
       { key: "businessName", formKey: "businessName" },
@@ -329,10 +368,12 @@ export function ClientDetailView({ id }: { id: string }) {
     }
     const cstHandler = String(formData.get("cstHandler") || "");
     if (canAssignCstOwner && cstHandler && cstHandler !== client.handlerId) payload.cstHandler = cstHandler;
+    if (payload.lifecycleStage === "Active") payload.workStartDate = client.workStart || todayIso;
+    if (payload.lifecycleStage === "Not Active") payload.dateChurned = todayIso;
     crmApi.update("clients", id, payload)
       .then(() => fetchClient())
-      .catch(() => undefined)
-      .finally(() => setEditOpen(false));
+      .then(closeEditClient)
+      .catch((error) => setClientEditError(error instanceof Error ? error.message : "Unable to update client."));
   }
 
   function saveActivity(formData: FormData) {
@@ -356,6 +397,30 @@ export function ClientDetailView({ id }: { id: string }) {
     setAddModal(null);
   }
 
+  function openUpsellModal() {
+    setUpsellLines([emptyUpsellLine()]);
+    setAddModal("upsell");
+  }
+
+  function openInvoiceModal() {
+    setInvoiceMonth(monthValue(client?.workStart));
+    setInvoiceMode("same");
+    setInvoiceError("");
+    setAddModal("invoice");
+  }
+
+  function updateUpsellLine(id: string, key: "service" | "revenue", value: string) {
+    setUpsellLines((lines) => lines.map((line) => line.id === id ? { ...line, [key]: key === "revenue" ? Number(value || 0) : value } : line));
+  }
+
+  function addUpsellLine() {
+    setUpsellLines((lines) => [...lines, emptyUpsellLine()]);
+  }
+
+  function removeUpsellLine(id: string) {
+    setUpsellLines((lines) => lines.length > 1 ? lines.filter((line) => line.id !== id) : lines);
+  }
+
   function saveClientService(formData: FormData) {
     if (!client) return;
     const service = String(formData.get("service") || "");
@@ -373,7 +438,8 @@ export function ClientDetailView({ id }: { id: string }) {
     const name = String(formData.get("serviceName") || "").trim();
     if (!name) return;
     try {
-      const service = await crmApi.createService({ name });
+      const existingService = serviceCatalog.find((service) => service.name.toLowerCase() === name.toLowerCase());
+      const service = existingService ?? await crmApi.createService({ name });
       await crmApi.createClientService(client.id, {
         service: service._id,
         monthlyAmount: Number(formData.get("monthlyAmount") || 0),
@@ -390,19 +456,74 @@ export function ClientDetailView({ id }: { id: string }) {
 
   function saveInvoice(formData: FormData) {
     if (!client) return;
-    const paid = String(formData.get("paid") || "false") === "true";
-    const sentDate = String(formData.get("sentDate") || "");
-    const paidDate = String(formData.get("paidDate") || "");
+    setInvoiceError("");
+    if (invoiceMode === "adjustment") {
+      const lineId = String(formData.get("clientServiceId") || "");
+      if (!lineId) {
+        setInvoiceError("Select a client service before saving an adjustment.");
+        return;
+      }
+      crmApi.updateClientService(client.id, lineId, {
+        monthlyAmount: Number(formData.get("adjustedAmount") || 0),
+      }).then(fetchClient).then(closeAddModal).catch((error) => setInvoiceError(error instanceof Error ? error.message : "Unable to save adjustment."));
+      return;
+    }
+    if (invoiceMode === "upsell") {
+      const service = String(formData.get("upsellInvoiceService") || "").trim();
+      if (!service) {
+        setInvoiceError("Enter the upsell service before saving.");
+        return;
+      }
+      crmApi.createUpsell({
+        client: client.id,
+        servicePitched: service,
+        revenue: Number(formData.get("upsellInvoiceRevenue") || 0),
+        upsellDate: String(formData.get("upsellInvoiceDate") || todayIso),
+        status: String(formData.get("upsellInvoiceStatus") || "In Progress"),
+      }).then(fetchClient).then(closeAddModal).catch((error) => setInvoiceError(error instanceof Error ? error.message : "Unable to save upsell."));
+      return;
+    }
+    const billingMonth = String(formData.get("billingMonth") || monthValue(client.workStart));
+    const amount = Number(formData.get("invoiceAmount") || client.mrr || 0);
+    if (amount <= 0) {
+      setInvoiceError("Enter an invoice amount or add/activate a recurring service first.");
+      return;
+    }
+    const paid = String(formData.get("invoicePaid") || "false") === "true";
+    const sentDate = String(formData.get("invoiceSentDate") || "");
+    const paidDate = String(formData.get("invoicePaidDate") || "");
     crmApi.createInvoice({
       client: client.id,
-      billingMonth: String(formData.get("billingMonth") || monthValue(client.workStart)),
-      amount: Number(formData.get("amount") || 0),
-      issueDate: String(formData.get("issueDate") || todayIso),
-      dueDate: String(formData.get("dueDate") || todayIso),
+      billingMonth,
+      amount,
+      issueDate: todayIso,
+      dueDate: invoiceDueDateForMonth(client.workStart, billingMonth),
       sentDate: sentDate || (paid ? (paidDate || todayIso) : null),
       paid,
       paidDate: paid ? (paidDate || todayIso) : null,
-    }).then(fetchClient).catch(() => undefined).finally(closeAddModal);
+    }).then(() => {
+      setDetailStatus("All");
+      setDetailQuery("");
+      setDetailFrom("");
+      setDetailTo("");
+      return fetchClient();
+    }).then(closeAddModal).catch((error) => setInvoiceError(error instanceof Error ? error.message : "Unable to generate invoice."));
+  }
+
+  function markClientInvoiceSent(invoice: BackendInvoice) {
+    crmApi.updateInvoice(invoice._id, { sentDate: todayIso }).then(fetchClient).catch(() => undefined);
+  }
+
+  function saveInvoiceUpdate(formData: FormData) {
+    if (!selectedInvoice) return;
+    const sentDate = String(formData.get("sentDate") || "");
+    const paid = String(formData.get("paid") || "false") === "true";
+    const paidDate = String(formData.get("paidDate") || "");
+    crmApi.updateInvoice(selectedInvoice._id, {
+      sentDate: sentDate || null,
+      paid,
+      paidDate: paid ? (paidDate || todayIso) : null,
+    }).then(fetchClient).catch(() => undefined).finally(() => setSelectedInvoice(null));
   }
 
   function saveContact(formData: FormData) {
@@ -411,7 +532,7 @@ export function ClientDetailView({ id }: { id: string }) {
     crmApi.createContact({
       client: client.id,
       contactDate: dateIsoValue,
-      contactType: "Simple contact",
+      contactType: String(formData.get("contactType") || "Simple contact"),
       channel: String(formData.get("channel") || "Phone"),
       notes: String(formData.get("notes") || ""),
       nextReachBackDate: String(formData.get("nextReachBackDate") || dateIsoValue),
@@ -422,38 +543,81 @@ export function ClientDetailView({ id }: { id: string }) {
     if (!client) return;
     const periodMonth = String(formData.get("periodMonth") || monthValue());
     const slot = String(formData.get("slot") || "15");
+    const sentState = String(formData.get("sentState") || "Pending");
+    const sentDate = String(formData.get("dateSent") || "");
+    const dueDate = monthDueDate(periodMonth, slot === "30" ? 30 : 15);
     crmApi.createReport({
       client: client.id,
       category: "Retention",
       label: slot === "30" ? "Retention Report 2 - 30 days" : "Retention Report 1 - 15 days",
       periodMonth,
-      dueDate: monthDueDate(periodMonth, slot === "30" ? 30 : 15),
+      dueDate,
+      dateSent: reportSentDateForStatus(sentState, dueDate, sentDate, todayIso),
       notes: String(formData.get("notes") || ""),
     }).then(fetchClient).catch(() => undefined).finally(closeAddModal);
   }
 
+  function markReportSent(report: BackendReport) {
+    crmApi.updateReport(report._id, { dateSent: todayIso }).then(fetchClient).catch(() => undefined);
+  }
+
+  function saveReportUpdate(formData: FormData) {
+    if (!selectedReport) return;
+    const sentState = String(formData.get("sentState") || "Pending");
+    const sentDate = String(formData.get("dateSent") || "");
+    const dueDate = String(formData.get("dueDate") || isoDate(selectedReport.dueDate));
+    crmApi.updateReport(selectedReport._id, {
+      dueDate,
+      dateSent: reportSentDateForStatus(sentState, dueDate, sentDate, todayIso),
+      notes: String(formData.get("notes") || ""),
+    }).then(fetchClient).catch(() => undefined).finally(() => setSelectedReport(null));
+  }
+
   function saveComplaint(formData: FormData) {
     if (!client) return;
-    const resolved = String(formData.get("resolved") || "false") === "true";
     crmApi.createComplaint({
       client: client.id,
       dateRaised: String(formData.get("dateRaised") || todayIso),
       details: String(formData.get("details") || ""),
-      forwardedTo: String(formData.get("forwardedTo") || client.handler),
+      forwardedTo: String(formData.get("forwardedTo") || "CST"),
+      resolved: false,
+      dateResolved: null,
+    }).then(fetchClient).catch(() => undefined).finally(closeAddModal);
+  }
+
+  function saveComplaintUpdate(formData: FormData) {
+    if (!selectedComplaint) return;
+    const resolved = String(formData.get("resolved") || "false") === "true";
+    crmApi.updateComplaint(selectedComplaint._id, {
+      details: String(formData.get("details") || ""),
+      forwardedTo: String(formData.get("forwardedTo") || "CST"),
       resolved,
       dateResolved: resolved ? String(formData.get("dateResolved") || todayIso) : null,
-    }).then(fetchClient).catch(() => undefined).finally(closeAddModal);
+    }).then(fetchClient).catch(() => undefined).finally(() => setSelectedComplaint(null));
   }
 
   function saveUpsell(formData: FormData) {
     if (!client) return;
+    const serviceNames = upsellLines.map((line) => line.service.trim()).filter(Boolean);
+    const totalRevenue = upsellLines.reduce((sum, line) => sum + Number(line.revenue || 0), 0);
+    if (!serviceNames.length) return;
     crmApi.createUpsell({
       client: client.id,
+      servicePitched: serviceNames.join(" + "),
+      revenue: totalRevenue,
+      upsellDate: String(formData.get("upsellDate") || todayIso),
+      status: String(formData.get("status") || "In Progress"),
+    }).then(fetchClient).catch(() => undefined).finally(closeAddModal);
+  }
+
+  function saveUpsellUpdate(formData: FormData) {
+    if (!selectedUpsell) return;
+    crmApi.updateUpsell(selectedUpsell._id, {
       servicePitched: String(formData.get("servicePitched") || ""),
       revenue: Number(formData.get("revenue") || 0),
       upsellDate: String(formData.get("upsellDate") || todayIso),
       status: String(formData.get("status") || "In Progress"),
-    }).then(fetchClient).catch(() => undefined).finally(closeAddModal);
+    }).then(fetchClient).catch(() => undefined).finally(() => setSelectedUpsell(null));
   }
 
   return (
@@ -522,8 +686,8 @@ export function ClientDetailView({ id }: { id: string }) {
       )}
 
       {tab === "Invoices" && (
-        <section className="panel"><div className="panel-head"><div><h2>Invoice history</h2><p>Permanent monthly amount snapshots.</p></div><div className="header-actions"><Button variant="secondary" onClick={() => setAddModal("invoice")}><Plus size={14} />Add invoice</Button><Link className="button secondary" href="/invoices">Full ledger</Link></div></div>
-          <div className="table-wrap"><table className="data-table"><thead><tr><th>Invoice</th><th>Month</th><th>Amount</th><th>Due</th><th>Status</th></tr></thead><tbody>{visibleInvoices.map((invoice) => <tr key={invoice._id}><td><Link className="record-link" href={`/invoices/${invoice._id}`}>{invoice._id}</Link></td><td>{invoice.billingMonth}</td><td><strong>${invoice.amount.toLocaleString()}</strong></td><td>{formatDate(invoice.dueDate)}</td><td><Badge tone={statusTone(invoiceStatus(invoice))}>{invoiceStatus(invoice)}</Badge></td></tr>)}</tbody></table>{visibleInvoices.length === 0 && <EmptyInline text="No matching invoices" />}</div>
+        <section className="panel"><div className="panel-head"><div><h2>Invoice history</h2><p>{visibleInvoices.length} invoice{visibleInvoices.length === 1 ? "" : "s"} found. Invoices use active recurring services and status is calculated from due date and sent date.</p></div><div className="header-actions"><Button variant="secondary" onClick={openInvoiceModal}><Plus size={14} />Generate invoice</Button><Link className="button secondary" href="/invoices">Full ledger</Link></div></div>
+          <div className="table-wrap"><table className="data-table"><thead><tr><th>Invoice</th><th>Month</th><th>Amount</th><th>Due</th><th>Sent</th><th>Status</th><th></th></tr></thead><tbody>{visibleInvoices.map((invoice) => <tr key={invoice._id}><td><Link className="record-link" href={`/invoices/${invoice._id}`}>{invoice._id}</Link></td><td>{invoice.billingMonth}</td><td><strong>${invoice.amount.toLocaleString()}</strong></td><td>{formatDate(invoice.dueDate)}</td><td>{invoice.sentDate ? formatDate(invoice.sentDate) : "Not sent"}</td><td><Badge tone={statusTone(invoiceStatus(invoice))}>{invoiceStatus(invoice)}</Badge></td><td><div className="header-actions">{!invoice.sentDate && <Button variant="ghost" onClick={() => markClientInvoiceSent(invoice)}><Send size={14} />Mark sent</Button>}<Button variant="ghost" onClick={() => setSelectedInvoice(invoice)}><Pencil size={14} />Update</Button></div></td></tr>)}</tbody></table>{visibleInvoices.length === 0 && <EmptyInline text="No matching invoices" />}</div>
         </section>
       )}
 
@@ -535,19 +699,19 @@ export function ClientDetailView({ id }: { id: string }) {
 
       {tab === "Reports" && (
         <section className="panel"><div className="panel-head"><div><h2>Scheduled reports</h2><p>Retention and onboarding deliverables by period.</p></div><Button variant="secondary" onClick={() => setAddModal("report")}><Plus size={14} />Add report</Button></div>
-          <div className="table-wrap"><table className="data-table"><thead><tr><th>Report</th><th>Category</th><th>Period</th><th>Due</th><th>Status</th></tr></thead><tbody>{visibleReports.map((report) => <tr key={report._id}><td><strong>{report.label}</strong></td><td>{report.category}</td><td>{report.periodMonth}</td><td>{formatDate(report.dueDate)}</td><td><Badge tone={statusTone(report.status as Status)}>{report.status}</Badge></td></tr>)}</tbody></table>{visibleReports.length === 0 && <EmptyInline text="No matching reports" />}</div>
+          <div className="table-wrap"><table className="data-table"><thead><tr><th>Report</th><th>Category</th><th>Period</th><th>Due</th><th>Sent</th><th>Status</th><th></th></tr></thead><tbody>{visibleReports.map((report) => <tr key={report._id}><td><strong>{report.label}</strong></td><td>{report.category}</td><td>{report.periodMonth}</td><td>{formatDate(report.dueDate)}</td><td>{report.dateSent ? formatDate(report.dateSent) : "Not sent"}</td><td><Badge tone={statusTone(report.status as Status)}>{report.status}</Badge></td><td><div className="header-actions">{!report.dateSent && <Button variant="ghost" onClick={() => markReportSent(report)}><Check size={14} />Mark sent</Button>}<Button variant="ghost" onClick={() => setSelectedReport(report)}><Pencil size={14} />Update</Button></div></td></tr>)}</tbody></table>{visibleReports.length === 0 && <EmptyInline text="No matching reports" />}</div>
         </section>
       )}
 
       {tab === "Complaints" && (
         <section className="panel"><div className="panel-head"><div><h2>Complaints</h2><p>Issues from raised date through resolution.</p></div><Button variant="secondary" onClick={() => setAddModal("complaint")}><Plus size={14} />Log complaint</Button></div>
-          <div className="record-list">{visibleComplaints.length ? visibleComplaints.map((complaint) => <article key={complaint._id}><div className="record-icon danger"><MessageSquareWarning size={16} /></div><div><strong>{complaint.details}</strong><p>Forwarded to {complaint.forwardedTo || client.handler}</p><span>Raised {formatDate(complaint.dateRaised)}{complaint.dateResolved ? ` - Resolved ${formatDate(complaint.dateResolved)}` : ""}</span></div><Badge tone={complaint.resolved ? "success" : "danger"}>{complaint.resolved ? "Resolved" : "Open"}</Badge></article>) : <EmptyInline text="No matching complaints" />}</div>
+          <div className="record-list">{visibleComplaints.length ? visibleComplaints.map((complaint) => <article key={complaint._id}><div className="record-icon danger"><MessageSquareWarning size={16} /></div><div><strong>{complaint.details}</strong><p>Forwarded to {complaint.forwardedTo || client.handler}</p><span>Raised {formatDate(complaint.dateRaised)}{complaint.dateResolved ? ` - Resolved ${formatDate(complaint.dateResolved)}` : ""}</span></div><div className="header-actions"><Badge tone={complaint.resolved ? "success" : "danger"}>{complaint.resolved ? "Resolved" : "Open"}</Badge><Button variant="ghost" onClick={() => setSelectedComplaint(complaint)}><Pencil size={14} />Update</Button></div></article>) : <EmptyInline text="No matching complaints" />}</div>
         </section>
       )}
 
       {tab === "Upsells" && (
-        <section className="panel"><div className="panel-head"><div><h2>Upsell pipeline</h2><p>Expansion opportunities linked to this account.</p></div><Button variant="secondary" onClick={() => setAddModal("upsell")}><Plus size={14} />New opportunity</Button></div>
-          <div className="record-cards">{visibleUpsells.length ? visibleUpsells.map((upsell) => <article key={upsell._id}><div className="record-icon"><HandCoins size={17} /></div><div><strong>{upsell.servicePitched}</strong><span>{formatDate(upsell.upsellDate)}</span></div><div className="record-value"><strong>${upsell.revenue.toLocaleString()}</strong><span>potential</span></div><Badge tone={statusTone(upsell.status as Status | "In Progress")}>{upsell.status}</Badge></article>) : <EmptyInline text="No matching upsells" />}</div>
+        <section className="panel"><div className="panel-head"><div><h2>Upsell pipeline</h2><p>Expansion opportunities linked to this account.</p></div><Button variant="secondary" onClick={openUpsellModal}><Plus size={14} />New opportunity</Button></div>
+          <div className="record-cards">{visibleUpsells.length ? visibleUpsells.map((upsell) => <article key={upsell._id}><div className="record-icon"><HandCoins size={17} /></div><div><strong>{upsell.servicePitched}</strong><span>{formatDate(upsell.upsellDate)}</span></div><div className="record-value"><strong>${upsell.revenue.toLocaleString()}</strong><span>potential</span></div><div className="header-actions"><Badge tone={statusTone(upsell.status as Status | "In Progress")}>{upsell.status}</Badge><Button variant="ghost" onClick={() => setSelectedUpsell(upsell)}><Pencil size={14} />Update</Button></div></article>) : <EmptyInline text="No matching upsells" />}</div>
         </section>
       )}
 
@@ -560,6 +724,7 @@ export function ClientDetailView({ id }: { id: string }) {
       <Modal open={editOpen} onClose={closeEditClient} title="Edit client" description="Update human-owned master record fields.">
         <form action={saveClient}>
           <div className="form-grid">
+            {clientEditError && <div className="field full"><div className="login-error">{clientEditError}</div></div>}
             <Field label="Business name"><input name="businessName" defaultValue={client.businessName} required /></Field>
             <Field label="Customer name"><input name="customerName" defaultValue={client.customerName} required /></Field>
             <Field label="Email"><input name="email" type="email" defaultValue={client.email} required /></Field>
@@ -614,58 +779,128 @@ export function ClientDetailView({ id }: { id: string }) {
 
       <Modal open={addModal === "newService"} onClose={closeAddModal} title="New service" description="Create a service and attach it to this client." footer={<><Button variant="secondary" onClick={closeAddModal}>Cancel</Button><Button type="submit" form="client-new-service-form"><Check size={15} />Save service</Button></>}>
         <form id="client-new-service-form" className="form-grid" action={saveNewClientService}>
-          <Field label="Service name *"><input name="serviceName" placeholder="Service name" required /></Field>
+          <Field label="Service name *" hint="Pick an existing service or type a new one."><input name="serviceName" list="client-service-catalog" placeholder="Select or type service" required /><datalist id="client-service-catalog">{serviceCatalog.map((service) => <option key={service._id} value={service.name} />)}</datalist></Field>
           <Field label="Amount"><input name="monthlyAmount" type="number" min="0" defaultValue={0} /></Field>
           <Field label="Billing type"><select name="billingType" defaultValue="Recurring"><option>Recurring</option><option>One Time</option></select></Field>
         </form>
       </Modal>
 
-      <Modal open={addModal === "invoice"} onClose={closeAddModal} title="Add invoice" description="Create a backend invoice for this client." footer={<><Button variant="secondary" onClick={closeAddModal}>Cancel</Button><Button type="submit" form="client-invoice-form"><Check size={15} />Save invoice</Button></>}>
+      <Modal open={addModal === "invoice"} onClose={closeAddModal} title="Invoice action" description="Choose same-month invoice, service price adjustment, or upsell." footer={<><Button variant="secondary" onClick={closeAddModal}>Cancel</Button><Button type="submit" form="client-invoice-form"><Check size={15} />Save</Button></>}>
         <form id="client-invoice-form" className="form-grid" action={saveInvoice}>
-          <Field label="Billing month"><input name="billingMonth" type="month" defaultValue={monthValue(client.workStart)} required /></Field>
-          <Field label="Amount"><input name="amount" type="number" min="0" defaultValue={client.mrr} required /></Field>
-          <Field label="Issue date"><input name="issueDate" type="date" defaultValue={todayIso} required /></Field>
-          <Field label="Due date"><input name="dueDate" type="date" defaultValue={todayIso} required /></Field>
-          <Field label="Sent date"><input name="sentDate" type="date" /></Field>
-          <Field label="Paid"><select name="paid" defaultValue="false"><option value="false">No</option><option value="true">Yes</option></select></Field>
-          <Field label="Paid date"><input name="paidDate" type="date" /></Field>
+          {invoiceError && <div className="field full"><div className="login-error">{invoiceError}</div></div>}
+          <div className="field full"><Field label="What are you adding?"><select value={invoiceMode} onChange={(event) => setInvoiceMode(event.target.value as "same" | "adjustment" | "upsell")}><option value="same">Same month invoice</option><option value="adjustment">Adjustment in current invoice</option><option value="upsell">Upsell</option></select></Field></div>
+          {invoiceMode === "same" && <>
+            <Field label="Billing month"><input name="billingMonth" type="month" value={invoiceMonth} onChange={(event) => setInvoiceMonth(event.target.value)} required /></Field>
+            <Field label="Amount" hint="Defaults to active recurring services; editable for manual invoice"><input name="invoiceAmount" type="number" min="0" defaultValue={client.mrr} /></Field>
+            <Field label="Issue date"><input value={todayIso} readOnly /></Field>
+            <Field label="Due date" hint="Same day as work start date"><input value={invoiceDueDateForMonth(client.workStart, invoiceMonth)} readOnly /></Field>
+            <Field label="Sent date"><input name="invoiceSentDate" type="date" /></Field>
+            <Field label="Paid"><select name="invoicePaid" defaultValue="false"><option value="false">No</option><option value="true">Yes</option></select></Field>
+            <Field label="Paid date"><input name="invoicePaidDate" type="date" /></Field>
+          </>}
+          {invoiceMode === "adjustment" && <>
+            <Field label="Service"><select name="clientServiceId" required defaultValue=""><option value="" disabled>Select service</option>{clientServiceLines.filter((line) => line.active !== false).map((line) => <option key={line._id} value={line._id}>{serviceLineName(line)} - ${line.monthlyAmount}</option>)}</select></Field>
+            <Field label="New recurring price"><input name="adjustedAmount" type="number" min="0" defaultValue={0} required /></Field>
+            <div className="field full"><div className="demo-note">This updates the service price and records the change in client history.</div></div>
+          </>}
+          {invoiceMode === "upsell" && <>
+            <datalist id="invoice-service-catalog">{serviceCatalog.map((service) => <option key={service._id} value={service.name} />)}</datalist>
+            <Field label="Service"><input name="upsellInvoiceService" list="invoice-service-catalog" placeholder="Select or type service" required /></Field>
+            <Field label="Revenue"><input name="upsellInvoiceRevenue" type="number" min="0" defaultValue={0} /></Field>
+            <Field label="Upsell date"><input name="upsellInvoiceDate" type="date" defaultValue={todayIso} /></Field>
+            <Field label="Status"><select name="upsellInvoiceStatus" defaultValue="In Progress"><option>In Progress</option><option>Converted</option><option>Lost</option></select></Field>
+          </>}
         </form>
+      </Modal>
+
+      <Modal open={Boolean(selectedInvoice)} onClose={() => setSelectedInvoice(null)} title="Update invoice" description="Change sent and payment facts. Status is recalculated automatically." footer={<><Button variant="secondary" onClick={() => setSelectedInvoice(null)}>Cancel</Button><Button type="submit" form="client-invoice-update-form"><Check size={15} />Save update</Button></>}>
+        {selectedInvoice && <form id="client-invoice-update-form" className="form-grid" action={saveInvoiceUpdate}>
+          <Field label="Invoice amount" hint="Immutable monthly snapshot"><input value={`$${selectedInvoice.amount.toLocaleString()}`} readOnly /></Field>
+          <Field label="Due date"><input value={formatDate(selectedInvoice.dueDate)} readOnly /></Field>
+          <Field label="Sent date"><input name="sentDate" type="date" defaultValue={isoDate(selectedInvoice.sentDate)} /></Field>
+          <Field label="Paid"><select name="paid" defaultValue={selectedInvoice.paid ? "true" : "false"}><option value="false">Not paid</option><option value="true">Paid</option></select></Field>
+          <Field label="Paid date"><input name="paidDate" type="date" defaultValue={isoDate(selectedInvoice.paidDate)} /></Field>
+          <Field label="Current status"><input value={invoiceStatus(selectedInvoice)} readOnly /></Field>
+        </form>}
       </Modal>
 
       <Modal open={addModal === "contact"} onClose={closeAddModal} title="Log contact" description="Save this touchpoint to the contacts module." footer={<><Button variant="secondary" onClick={closeAddModal}>Cancel</Button><Button type="submit" form="client-contact-form"><Check size={15} />Save contact</Button></>}>
         <form id="client-contact-form" className="form-grid" action={saveContact}>
           <Field label="Date"><input name="contactDate" type="date" defaultValue={todayIso} required /></Field>
+          <Field label="Contact about"><select name="contactType" defaultValue="Simple contact"><option>Simple contact</option><option>Complaint</option><option>Report</option><option>Upsell</option></select></Field>
           <Field label="Channel"><select name="channel" defaultValue="Phone"><option>Phone</option><option>WhatsApp</option><option>Email</option><option>Video</option></select></Field>
           <Field label="Next reach-back"><input name="nextReachBackDate" type="date" defaultValue={tomorrowIso} required /></Field>
           <div className="field full"><Field label="Notes *"><textarea name="notes" placeholder="Contact detail" required /></Field></div>
         </form>
       </Modal>
 
-      <Modal open={addModal === "report"} onClose={closeAddModal} title="Add report" description="Each month has report 1 after 15 days and report 2 after 30 days." footer={<><Button variant="secondary" onClick={closeAddModal}>Cancel</Button><Button type="submit" form="client-report-form"><Check size={15} />Save report</Button></>}>
+      <Modal open={addModal === "report"} onClose={closeAddModal} title="Add report" description="Status is calculated from due date and sent date: no sent date is pending or late, sent after due is late, sent on or before due is sent." footer={<><Button variant="secondary" onClick={closeAddModal}>Cancel</Button><Button type="submit" form="client-report-form"><Check size={15} />Save report</Button></>}>
         <form id="client-report-form" className="form-grid" action={saveReport}>
           <Field label="Period month"><input name="periodMonth" type="month" defaultValue={monthValue()} required /></Field>
           <Field label="Report slot"><select name="slot" defaultValue="15"><option value="15">Report 1 - 15 days</option><option value="30">Report 2 - 30 days</option></select></Field>
+          <Field label="Status"><select name="sentState" defaultValue="Sent"><option value="Sent">Sent</option><option value="Pending">Pending</option><option value="Late">Late</option></select></Field>
+          <Field label="Sent date"><input name="dateSent" type="date" defaultValue={todayIso} /></Field>
           <div className="field full"><Field label="Comment"><textarea name="notes" placeholder="Report comment" /></Field></div>
         </form>
+      </Modal>
+
+      <Modal open={Boolean(selectedReport)} onClose={() => setSelectedReport(null)} title="Update report" description="Change sent state/date. CRM recalculates Sent, Late, or Pending from due date and sent date." footer={<><Button variant="secondary" onClick={() => setSelectedReport(null)}>Cancel</Button><Button type="submit" form="client-report-update-form"><Check size={15} />Save update</Button></>}>
+        {selectedReport && <form id="client-report-update-form" className="form-grid" action={saveReportUpdate}>
+          <Field label="Report"><input value={selectedReport.label} readOnly /></Field>
+          <Field label="Period"><input value={selectedReport.periodMonth} readOnly /></Field>
+          <Field label="Due date"><input name="dueDate" type="date" defaultValue={isoDate(selectedReport.dueDate)} required /></Field>
+          <Field label="Current status"><select name="sentState" defaultValue={selectedReport.status}><option value="Sent">Sent</option><option value="Pending">Pending</option><option value="Late">Late</option></select></Field>
+          <Field label="Sent date"><input name="dateSent" type="date" defaultValue={isoDate(selectedReport.dateSent) || todayIso} /></Field>
+          <div className="field full"><Field label="Comment"><textarea name="notes" placeholder="Report update note" /></Field></div>
+        </form>}
       </Modal>
 
       <Modal open={addModal === "complaint"} onClose={closeAddModal} title="Log complaint" description="Save this issue to the complaints module without leaving the client." footer={<><Button variant="secondary" onClick={closeAddModal}>Cancel</Button><Button type="submit" form="client-complaint-form"><Check size={15} />Save complaint</Button></>}>
         <form id="client-complaint-form" className="form-grid" action={saveComplaint}>
           <Field label="Raised date"><input name="dateRaised" type="date" defaultValue={todayIso} required /></Field>
-          <Field label="Forwarded to"><input name="forwardedTo" defaultValue={client.handler} /></Field>
-          <Field label="Resolved"><select name="resolved" defaultValue="false"><option value="false">No</option><option value="true">Yes</option></select></Field>
-          <Field label="Resolved date"><input name="dateResolved" type="date" /></Field>
+          <Field label="Forwarded to"><select name="forwardedTo" defaultValue="CST"><option>CST</option><option>Sales</option><option>Production</option></select></Field>
           <div className="field full"><Field label="Details *"><textarea name="details" placeholder="Complaint detail" required /></Field></div>
         </form>
       </Modal>
 
+      <Modal open={Boolean(selectedComplaint)} onClose={() => setSelectedComplaint(null)} title="Update complaint" description="Change the forwarded department or mark the complaint resolved." footer={<><Button variant="secondary" onClick={() => setSelectedComplaint(null)}>Cancel</Button><Button type="submit" form="client-complaint-update-form"><Check size={15} />Save update</Button></>}>
+        {selectedComplaint && <form id="client-complaint-update-form" className="form-grid" action={saveComplaintUpdate}>
+          <Field label="Forwarded to"><select name="forwardedTo" defaultValue={selectedComplaint.forwardedTo || "CST"}><option>CST</option><option>Sales</option><option>Production</option></select></Field>
+          <Field label="Status"><select name="resolved" defaultValue={selectedComplaint.resolved ? "true" : "false"}><option value="false">Open</option><option value="true">Resolved</option></select></Field>
+          <Field label="Resolved date"><input name="dateResolved" type="date" defaultValue={isoDate(selectedComplaint.dateResolved) || todayIso} /></Field>
+          <div className="field full"><Field label="Details *"><textarea name="details" defaultValue={selectedComplaint.details} required /></Field></div>
+        </form>}
+      </Modal>
+
       <Modal open={addModal === "upsell"} onClose={closeAddModal} title="New upsell" description="Save this opportunity to the upsells module." footer={<><Button variant="secondary" onClick={closeAddModal}>Cancel</Button><Button type="submit" form="client-upsell-form"><Check size={15} />Save upsell</Button></>}>
         <form id="client-upsell-form" className="form-grid" action={saveUpsell}>
-          <Field label="Service pitched *"><input name="servicePitched" placeholder="Service" required /></Field>
-          <Field label="Revenue"><input name="revenue" type="number" min="0" defaultValue={0} /></Field>
+          <div className="field full">
+            <Field label="Services pitched *" hint="Pick existing services or type a custom add-on.">
+              <datalist id="upsell-service-catalog">{serviceCatalog.map((service) => <option key={service._id} value={service.name} />)}</datalist>
+              <div className="upsell-lines">
+                {upsellLines.map((line, index) => (
+                  <div className="upsell-line" key={line.id}>
+                    <input name="upsellService" list="upsell-service-catalog" placeholder={index === 0 ? "Select or type service" : "Add-on service"} value={line.service} onChange={(event) => updateUpsellLine(line.id, "service", event.target.value)} required={index === 0} />
+                    <input name="upsellRevenue" type="number" min="0" placeholder="Revenue" value={line.revenue} onChange={(event) => updateUpsellLine(line.id, "revenue", event.target.value)} />
+                    <Button type="button" variant="ghost" onClick={() => removeUpsellLine(line.id)} disabled={upsellLines.length === 1}>Remove</Button>
+                  </div>
+                ))}
+              </div>
+            </Field>
+            <Button type="button" variant="secondary" onClick={addUpsellLine}><Plus size={14} />Add add-on</Button>
+          </div>
           <Field label="Upsell date"><input name="upsellDate" type="date" defaultValue={todayIso} /></Field>
           <Field label="Status"><select name="status" defaultValue="In Progress"><option>In Progress</option><option>Converted</option><option>Lost</option></select></Field>
         </form>
+      </Modal>
+
+      <Modal open={Boolean(selectedUpsell)} onClose={() => setSelectedUpsell(null)} title="Update upsell" description="Work the existing opportunity instead of adding a duplicate." footer={<><Button variant="secondary" onClick={() => setSelectedUpsell(null)}>Cancel</Button><Button type="submit" form="client-upsell-update-form"><Check size={15} />Save update</Button></>}>
+        {selectedUpsell && <form id="client-upsell-update-form" className="form-grid" action={saveUpsellUpdate}>
+          <Field label="Service pitched *"><input name="servicePitched" defaultValue={selectedUpsell.servicePitched} required /></Field>
+          <Field label="Revenue"><input name="revenue" type="number" min="0" defaultValue={selectedUpsell.revenue} /></Field>
+          <Field label="Upsell date"><input name="upsellDate" type="date" defaultValue={isoDate(selectedUpsell.upsellDate) || todayIso} /></Field>
+          <Field label="Status"><select name="status" defaultValue={selectedUpsell.status}><option>In Progress</option><option>Converted</option><option>Lost</option></select></Field>
+        </form>}
       </Modal>
 
       <Modal open={Boolean(selectedHistory)} onClose={() => setSelectedHistory(null)} title="History details" description={selectedHistory ? `${selectedHistory.tag} ${selectedHistory.recordId ?? ""}` : undefined}>
@@ -718,6 +953,7 @@ export function InvoiceDetailView({ id }: { id: string }) {
   }, [id]);
 
   useEffect(() => { void Promise.resolve().then(fetchInvoice); }, [fetchInvoice]);
+  useEffect(() => onCrmDataChanged(fetchInvoice), [fetchInvoice]);
 
   if (loading || !invoice) {
     return <div className="state-card" data-testid="loading-state"><strong>Loading invoice</strong><p>Fetching from CRM…</p></div>;
@@ -803,6 +1039,7 @@ export function OnboardingDetailView({ id }: { id: string }) {
   }, [id]);
 
   useEffect(() => { void Promise.resolve().then(fetchData); }, [fetchData]);
+  useEffect(() => onCrmDataChanged(fetchData), [fetchData]);
 
   if (loading || !clientData) {
     return <div className="state-card" data-testid="loading-state"><strong>Loading onboarding</strong><p>Fetching from CRM…</p></div>;
@@ -814,6 +1051,15 @@ export function OnboardingDetailView({ id }: { id: string }) {
 
   const status = record?.onboardStatus ?? "In Progress";
   const progress = Math.min(100, Math.round(day / 30 * 100));
+
+  function saveOnboardingUpdate(formData: FormData) {
+    const delaySide = String(formData.get("delaySide") || "N/A");
+    crmApi.updateOnboarding(id, {
+      onboardStatus: String(formData.get("onboardStatus") || "In Progress"),
+      delaySide,
+      delayReason: delaySide === "N/A" ? "" : String(formData.get("delayReason") || ""),
+    }).then(fetchData).catch(() => undefined).finally(() => setEditOpen(false));
+  }
 
   return (
     <>
@@ -854,12 +1100,12 @@ export function OnboardingDetailView({ id }: { id: string }) {
           )}
         </section>
       </div>
-      <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Update onboarding" description="Record delay ownership, escalation facts, and overall status." footer={<><Button variant="secondary" onClick={() => setEditOpen(false)}>Cancel</Button><Button onClick={() => setEditOpen(false)}><Check size={15} />Save update</Button></>}>
-        <div className="form-grid">
-          <Field label="Overall status"><select defaultValue={record?.onboardStatus ?? "In Progress"}><option>In Progress</option><option>Ready for review</option><option>Graduating this week</option><option>Delayed</option></select></Field>
-          <Field label="Delay side"><select defaultValue={record?.delaySide ?? "N/A"}><option>N/A</option><option>Client</option><option>Our</option></select></Field>
-          <Field label="Delay reason"><textarea defaultValue={record?.delayReason ?? ""} placeholder="Required when a delay is recorded" /></Field>
-        </div>
+      <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Update onboarding" description="Record delay ownership, escalation facts, and overall status." footer={<><Button variant="secondary" onClick={() => setEditOpen(false)}>Cancel</Button><Button type="submit" form="onboarding-update-form"><Check size={15} />Save update</Button></>}>
+        <form id="onboarding-update-form" className="form-grid" action={saveOnboardingUpdate}>
+          <Field label="Overall status"><select name="onboardStatus" defaultValue={record?.onboardStatus ?? "In Progress"}><option>In Progress</option><option>Ready for review</option><option>Graduating this week</option><option>Completed</option><option>Delayed</option></select></Field>
+          <Field label="Delay side"><select name="delaySide" defaultValue={record?.delaySide ?? "N/A"}><option>N/A</option><option>Client</option><option>Our</option></select></Field>
+          <div className="field full"><Field label="Delay reason"><textarea name="delayReason" defaultValue={record?.delayReason ?? ""} placeholder="Required when a delay is recorded" /></Field></div>
+        </form>
       </Modal>
     </>
   );

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CalendarClock, ChevronRight, Filter } from "lucide-react";
-import { crmApi, type BackendOnboarding } from "@/lib/api";
+import { crmApi, onCrmDataChanged, type BackendOnboarding } from "@/lib/api";
 import { Avatar, Badge, Button, Field, PageHeader, LoadingState, ErrorState } from "./ui";
 
 type BoardColumn = {
@@ -84,6 +84,7 @@ export function OnboardingView() {
   }, []);
 
   useEffect(() => { void Promise.resolve().then(fetch); }, [fetch]);
+  useEffect(() => onCrmDataChanged(fetch), [fetch]);
 
   const board = useMemo((): BoardColumn[] => {
     const columns = STAGE_ORDER.map((title) => {

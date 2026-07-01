@@ -27,7 +27,10 @@ export interface Invoice {
   month: string;
   amount: number;
   due: string;
+  dueIso?: string;
   sent?: string;
+  sentIso?: string;
+  paidDateIso?: string;
   status: Status;
   paid: boolean;
 }

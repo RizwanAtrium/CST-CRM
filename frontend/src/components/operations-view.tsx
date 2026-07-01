@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Download, Ellipsis, Filter, Pencil } from "lucide-react";
-import { crmApi } from "@/lib/api";
+import { crmApi, onCrmDataChanged } from "@/lib/api";
 import type { BackendContact, BackendComplaint, BackendReport, BackendUpsell } from "@/lib/api";
 import type { Client, Status } from "@/lib/types";
 import { AddButton, Badge, Button, Field, LoadingState, Modal, PageHeader, SearchField } from "./ui";
@@ -275,6 +275,7 @@ export function OperationsView({
   useEffect(() => {
     void Promise.resolve().then(fetchData);
   }, [fetchData]);
+  useEffect(() => onCrmDataChanged(fetchData), [fetchData]);
 
   useEffect(() => {
     if (clientsList.length > 0 && !draft.client) {

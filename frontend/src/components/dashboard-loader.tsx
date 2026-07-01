@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { crmApi } from "@/lib/api";
+import { crmApi, onCrmDataChanged } from "@/lib/api";
 import type { ActivityRecord, DashboardData } from "@/lib/types";
 import { DashboardView } from "./dashboard-view";
 
@@ -16,7 +16,7 @@ export function DashboardLoader({ initialData, initialActivity, initialFrom, ini
   const [data, setData] = useState(initialData);
   const [activity, setActivity] = useState(initialActivity);
 
-  useEffect(() => {
+  function refresh() {
     const controller = new AbortController();
     crmApi.dashboard()
       .then((nextData) => {
@@ -29,7 +29,12 @@ export function DashboardLoader({ initialData, initialActivity, initialFrom, ini
       })
       .catch(() => undefined);
     return () => controller.abort();
+  }
+
+  useEffect(() => {
+    return refresh();
   }, []);
+  useEffect(() => onCrmDataChanged(refresh), []);
 
   return <DashboardView data={data} activity={activity} initialFrom={initialFrom} initialTo={initialTo} />;
 }

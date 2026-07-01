@@ -84,7 +84,12 @@ clientsRouter.get('/', validate(z.object({ page:z.coerce.number().int().positive
     const key = String(line.client);
     servicesByClient.set(key, [...(servicesByClient.get(key) ?? []), service.name]);
   }
-  res.json({ success: true, data: items.map((x) => ({ ...x, mrr: map.get(String(x._id)) ?? 0, services: servicesByClient.get(String(x._id)) ?? [] })), meta: { page, limit, total, pages: Math.ceil(total / limit) } });
+  const healthByClient = new Map<string, number>();
+  await Promise.all(items.map(async (client) => {
+    const computed = await clientComputed(client);
+    healthByClient.set(String(client._id), computed.health);
+  }));
+  res.json({ success: true, data: items.map((x) => ({ ...x, mrr: map.get(String(x._id)) ?? 0, services: servicesByClient.get(String(x._id)) ?? [], health: healthByClient.get(String(x._id)) ?? 0 })), meta: { page, limit, total, pages: Math.ceil(total / limit) } });
 }));
 clientsRouter.post('/', validate(createBody), asyncHandler(async (req, res) => {
   const { services, ...clientInput } = req.body;
